@@ -46,6 +46,7 @@ module MLCanopyFluxesType
     real(r8), pointer :: qref_forcing(:)         ! Specific humidity at reference height (kg/kg)
     real(r8), pointer :: uref_forcing(:)         ! Wind speed at reference height (m/s)
     real(r8), pointer :: pref_forcing(:)         ! Air pressure at reference height (Pa)
+    real(r8), pointer :: pref_prev_forcing(:)    ! Air pressure at reference height from previous timestep (Pa)
     real(r8), pointer :: co2ref_forcing(:)       ! Atmospheric CO2 at reference height (umol/mol)
     real(r8), pointer :: o2ref_forcing(:)        ! Atmospheric O2 at reference height (mmol/mol)
     real(r8), pointer :: swskyb_forcing(:,:)     ! Atmospheric direct beam solar radiation (W/m2) [for numrad wavebands]
@@ -301,7 +302,10 @@ module MLCanopyFluxesType
     real(r8), pointer :: gspot_leaf(:,:,:)       ! Leaf stomatal conductance without water stress (mol H2O/m2 leaf/s)
     real(r8), pointer :: alphapsn_leaf(:,:,:)    ! Leaf 13C fractionation factor for photosynthesis (-)
 
-  contains
+    integer :: istep, isubstep
+    integer :: update_lwp
+    integer :: screen_output
+    contains
 
     procedure, public  :: Init              ! CLM initialization of data type
     procedure, private :: InitAllocate      ! CLM initialization: allocate module data structure
@@ -363,6 +367,7 @@ contains
     allocate (this%qref_forcing        (begp:endp))                              ; this%qref_forcing        (:)       = spval
     allocate (this%uref_forcing        (begp:endp))                              ; this%uref_forcing        (:)       = spval
     allocate (this%pref_forcing        (begp:endp))                              ; this%pref_forcing        (:)       = spval
+    allocate (this%pref_prev_forcing   (begp:endp))                              ; this%pref_prev_forcing   (:)       = spval
     allocate (this%co2ref_forcing      (begp:endp))                              ; this%co2ref_forcing      (:)       = spval
     allocate (this%o2ref_forcing       (begp:endp))                              ; this%o2ref_forcing       (:)       = spval
     allocate (this%swskyb_forcing      (begp:endp,1:numrad))                     ; this%swskyb_forcing      (:,:)     = spval
@@ -565,7 +570,7 @@ contains
     allocate (this%stleaf_leaf         (begp:endp,1:nlevmlcan,1:nleaf))          ; this%stleaf_leaf         (:,:,:)   = spval
     allocate (this%shleaf_leaf         (begp:endp,1:nlevmlcan,1:nleaf))          ; this%shleaf_leaf         (:,:,:)   = spval
     allocate (this%lhleaf_leaf         (begp:endp,1:nlevmlcan,1:nleaf))          ; this%lhleaf_leaf         (:,:,:)   = spval
-    allocate (this%trleaf_leaf         (begp:endp,1:nlevmlcan,1:nleaf))          ; this%trleaf_leaf         (:,:,:)   = spval
+    allocate (this%trleaf_leaf         (begp:endp,1:nlevmlcan,1:nleaf))          ; this%trleaf_leaf         (:,:,:)   = 0._r8
     allocate (this%evleaf_leaf         (begp:endp,1:nlevmlcan,1:nleaf))          ; this%evleaf_leaf         (:,:,:)   = spval
 
     allocate (this%gbh_leaf            (begp:endp,1:nlevmlcan,1:nleaf))          ; this%gbh_leaf            (:,:,:)   = spval
@@ -604,6 +609,11 @@ contains
     allocate (this%gs_leaf             (begp:endp,1:nlevmlcan,1:nleaf))          ; this%gs_leaf             (:,:,:)   = spval
     allocate (this%gspot_leaf          (begp:endp,1:nlevmlcan,1:nleaf))          ; this%gspot_leaf          (:,:,:)   = spval
     allocate (this%alphapsn_leaf       (begp:endp,1:nlevmlcan,1:nleaf))          ; this%alphapsn_leaf       (:,:,:)   = spval
+
+    this%istep = 0
+    this%isubstep = 0
+    this%update_lwp = 0
+    this%screen_output = 1
 
   end subroutine InitAllocate
 

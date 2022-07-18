@@ -20,7 +20,41 @@ module MLinitVerticalMod
 
 contains
 
-  !-----------------------------------------------------------------------
+  !------------------------------------------------------------------------
+function cummulative_area_index(pbeta, qbeta, z_u, z_l, hc) result(cumm_area_index)
+   !
+   implicit none
+   !
+   real(r8), intent(in) :: pbeta, qbeta, z_u, z_l, hc
+   real(r8) :: cumm_area_index
+   !
+   real(r8) :: dz_int, z_int, beta_pdf, zrel
+   integer  :: i
+   !
+   integer, parameter :: num_int = 100
+   
+   ! Numerical integration between zl and zu using 100 sublayers
+
+   cumm_area_index = 0.d0
+
+   dz_int = (z_u - z_l)/num_int
+
+   do i = 1, num_int
+      if (i == 1) then
+         z_int = z_l + 0.5d0 * dz_int
+      else
+         z_int = z_int + dz_int
+      end if
+      zrel = min(z_int/hc, 1.d0)
+
+      beta_pdf = (zrel**(pbeta-1) * (1.d0 - zrel)**(qbeta-1))/exp(lgamma(pbeta) + lgamma(qbeta) - lgamma(pbeta+qbeta));
+      
+      cumm_area_index = cumm_area_index + beta_pdf * dz_int
+   end do
+
+ end function cummulative_area_index
+
+ !-----------------------------------------------------------------------
   subroutine initVerticalStructure (bounds, num_filter, filter, &
   canopystate_inst, frictionvel_inst, mlcanopy_inst)
     !
@@ -128,13 +162,23 @@ contains
              dz_within = dz_short
           end if
 
+          !write(*,*)'ztop(p)              ',ztop(p)
+          !write(*,*)'dz_param             ',dz_param
+          !write(*,*)'dz_tall              ',dz_tall
+          !write(*,*)'dz_short             ',dz_short
+          !write(*,*)'(ztop(p) > dz_param) ',(ztop(p) > dz_param)
+          !write(*,*)'dz_within            ',dz_within
           ntop(p) = nint(ztop(p) / dz_within)
           dz_within = ztop(p) / float(ntop(p))
+          write(*,*)'%ntop                  ',ntop
+          !write(*,*)'dz_within            ',dz_within
 
           ! Now determine the number of above-canopy layers and their thickness
 
           dz_above = dz_within
           nabove = nint(ztop_to_zref / dz_above)
+          !write(*,*)'dz_above             ',dz_above
+          !write(*,*)'nabove               ',ntop
 
           ! Uncomment these two lines to run 1L at all sites with same above canopy layers as ML
           ! ntop(p) = 1
@@ -171,23 +215,32 @@ contains
 
        ! Now calculate the above-canopy heights (for ic = ntop+1 to ncan)
 
+       !!write(*,*)'zw:'
        ic = ncan(p)
+       write(*,*)'%ncan(p) = ',ncan(p)
+       !call exit(0)
        zw(p,ic) = zref(p)
+       !!write(*,*)ic,zw(p,ic)
        do ic = ncan(p)-1, ntop(p)+1, -1
           zw(p,ic) = zw(p,ic+1) - dz_above
+      !    !write(*,*)ic,zw(p,ic)
        end do
 
        ! Thickness of each layer
 
+       !!write(*,*)'dz:'
        do ic = 1, ncan(p)
           dz(p,ic) = zw(p,ic) - zw(p,ic-1)
+       !   !write(*,*)ic,dz(p,ic)
        end do
 
        ! Determine heights of the scalar concentration and scalar source
        ! (zs). These are physically centered in the layer.
 
+       !!write(*,*)'zs'
        do ic = 1, ncan(p)
           zs(p,ic) = 0.5_r8 * (zw(p,ic) + zw(p,ic-1))
+       !   !write(*,*)ic,zs(p,ic)
        end do
 
        ! Calculate leaf area index at each height using the beta distribution
@@ -195,7 +248,8 @@ contains
        ! at the the bottom and top heights for the layer. The shape of the beta
        ! distribution is determined by the parameters pbeta and qbeta. Note that
        ! pbeta = qbeta = 1 gives a uniform distribution.
-
+       
+       !write(*,*)'dlai: ',pbeta_lai(patch%itype(p)), qbeta_lai(patch%itype(p)),elai(p)
        do ic = 1, ntop(p)
 
           ! Lower height at bottom of layer
@@ -210,19 +264,24 @@ contains
 
           ! Leaf area index (m2/m2)
 
-          dlai(p,ic) = (beta_cdf_top - beta_cdf_bot) * elai(p)
+          !dlai(p,ic) = (beta_cdf_top - beta_cdf_bot) * elai(p)
+          dlai(p,ic) = cummulative_area_index(pbeta_lai(patch%itype(p)), qbeta_lai(patch%itype(p)), zw(p,ic), zw(p,ic-1), ztop(p)) * (elai(p)/ztop(p))
+          write(*,*)'%',ic,dlai(p,ic),zw(p,ic), zw(p,ic-1)
 
        end do
 
        ! Repeat these calculations for stem area index. This allows for a different
        ! profile of stem area index.
 
+       !write(*,*)'dsai',pbeta_sai(patch%itype(p)),qbeta_sai(patch%itype(p)), esai(p)
        do ic = 1, ntop(p)
           zrel = min(zw(p,ic-1)/ztop(p), 1._r8)
           beta_cdf_bot = beta_distribution_cdf(pbeta_sai(patch%itype(p)),qbeta_sai(patch%itype(p)),zrel)
           zrel = min(zw(p,ic)/ztop(p), 1._r8)
           beta_cdf_top = beta_distribution_cdf(pbeta_sai(patch%itype(p)),qbeta_sai(patch%itype(p)),zrel)
           dsai(p,ic) = (beta_cdf_top - beta_cdf_bot) * esai(p)
+          dsai(p,ic) = cummulative_area_index(pbeta_sai(patch%itype(p)), qbeta_sai(patch%itype(p)), zw(p,ic), zw(p,ic-1), ztop(p)) * (esai(p)/ztop(p))
+          !write(*,*)ic,dlai(p,ic),dsai(p,ic)
        end do
 
        ! Check to make sure sum of dlai+dsai matches canopy lai+sai
@@ -237,6 +296,7 @@ contains
        ! so that this can be distributed back across the layers.
 
        lai_miss = 0._r8 ; sai_miss = 0._r8
+       write(*,*)'%dpai_min ',dpai_min
        do ic = 1, ntop(p)
           if ((dlai(p,ic)+dsai(p,ic)) < dpai_min) then
              lai_miss = lai_miss + dlai(p,ic)
@@ -248,21 +308,29 @@ contains
 
        ! Distribute the missing leaf area across layers in proportion to the leaf area profile
 
+       !write(*,*)'Updated dlai: ',lai_miss
        if (lai_miss > 0._r8) then
           lai_err = sum(dlai(p,1:ntop(p)))
           do ic = 1, ntop(p)
              dlai(p,ic) = dlai(p,ic) + lai_miss * (dlai(p,ic) / lai_err)
-          end do
+             !!write(*,*)ic,dsai(p,ic)
+            end do
        end if
 
        ! Now do the same for stem area
 
+       !write(*,*)'Updated dsai: ',sai_miss
        if (sai_miss > 0._r8) then
           sai_err = sum(dsai(p,1:ntop(p)))
           do ic = 1, ntop(p)
              dsai(p,ic) = dsai(p,ic) + sai_miss * (dsai(p,ic) / sai_err)
           end do
        end if
+
+       write(*,*)'%lai, sai'
+       do ic = 1, ntop(p)
+         write(*,*)'%',ic,dlai(p,ic),dsai(p,ic)
+       enddo
 
        ! Find the lowest leaf/stem layer. nbot is the first layer above the
        ! ground with leaves or stems and is used to accommodate open layers
@@ -304,9 +372,11 @@ contains
 
        ! Normalize profiles
 
+       !!write(*,*)'dlai_frac, dsai_frac',elai(p),esai(p)
        do ic = 1, ncan(p)
           dlai_frac(p,ic) = dlai(p,ic) / elai(p)
           dsai_frac(p,ic) = dsai(p,ic) / esai(p)
+          !!write(*,*)ic,dlai(p,ic),dlai_frac(p,ic),dsai(p,ic),dsai_frac(p,ic)
        end do
 
     end do
@@ -373,6 +443,7 @@ contains
        c = patch%column(p)
        g = patch%gridcell(p)
 
+!       !write(*,*)'wind,tair,eair,cair,tleaf,lwp'
        do ic = 1, ncan(p)
           wind(p,ic) = max (wind_forc_min, sqrt(forc_u(g)*forc_u(g)+forc_v(g)*forc_v(g)))
           tair(p,ic) = forc_t(c)
@@ -380,9 +451,11 @@ contains
           cair(p,ic) = forc_pco2(g) / forc_pbot(c) * 1.e06_r8
 
           tleaf(p,ic,isun) = forc_t(c) ; tleaf(p,ic,isha) = forc_t(c)
-          lwp(p,ic,isun) = -0.1_r8 ; lwp(p,ic,isha) = -0.1_r8
+          lwp(p,ic,isun) = -2.4_r8 ; lwp(p,ic,isha) = -2.4_r8
           h2ocan(p,ic) = 0._r8
+!          !write(*,*)wind(p,ic),tair(p,ic),eair(p,ic),cair(p,ic),tleaf(p,ic,isun),tleaf(p,ic,isha),lwp(p,ic,isun),lwp(p,ic,isha)
        end do
+!       !write(*,*)'forc_t',forc_t(c),'forc_q',forc_q(c)
 
        taf(p) = forc_t(c)
        qaf(p) = forc_q(c)

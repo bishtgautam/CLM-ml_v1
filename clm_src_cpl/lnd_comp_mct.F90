@@ -39,7 +39,7 @@ contains
   end subroutine lnd_init_mct
 
   !-----------------------------------------------------------------------
-  subroutine lnd_run_mct (bounds, time_indx, fin)
+  subroutine lnd_run_mct (bounds, time_indx, fin, nout5, nout6, nout7, nout8, itim)
     !
     ! !DESCRIPTION:
     ! Run CLM model
@@ -52,11 +52,12 @@ contains
     type(bounds_type), intent(in) :: bounds
     integer, intent(in) :: time_indx            ! Time index from reference date (0Z January 1 of current year, when calday = 1.000
     character(len=256) :: fin                   ! File name
+    integer :: nout5, nout6, nout7, nout8, itim
     !
     ! !LOCAL VARIABLES:
     !---------------------------------------------------------------------
 
-    call clm_drv (bounds, time_indx, fin)
+    call clm_drv (bounds, time_indx, fin, nout5, nout6, nout7, nout8, itim)
 
   end subroutine lnd_run_mct
 

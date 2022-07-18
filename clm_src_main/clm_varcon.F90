@@ -12,7 +12,8 @@ module clm_varcon
 
   ! Mathematical constants used in CLM
 
-  real(r8) :: rpi = 3.141592654_r8          ! pi
+  !real(r8) :: rpi = 3.141592654_r8          ! pi
+  real(r8), parameter :: rpi = 4.d0 * atan(1.0_r8)
 
   ! Physical constants used in CLM
 

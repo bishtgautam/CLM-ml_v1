@@ -8,6 +8,8 @@
  
 # LIB_NETCDF = /usr/local/netcdf-c-4.6.1-f-4.4.4-pgi-pgcc-pgf-18.1/lib
 # MOD_NETCDF = /usr/local/netcdf-c-4.6.1-f-4.4.4-pgi-pgcc-pgf-18.1/include
+
+NETCDF_PATH=/opt/local
  
 LIB_NETCDF = $(NETCDF_PATH)/lib
 MOD_NETCDF = $(NETCDF_PATH)/include
@@ -33,6 +35,7 @@ prgm = prgm.exe
 # Fortran 95 compiler
 
 cmplr = pgf90 -C -Minform=inform -Ktrap=fp -L$(LIB_NETCDF) -I$(MOD_NETCDF) -lnetcdff -lblas -llapack -lm -L/usr/lib64
+cmplr = /opt/local/bin/mpif90-openmpi-mp -L$(LIB_NETCDF) -I$(MOD_NETCDF) -lnetcdff -lblas -llapack -lm -O -fconvert=big-endian -ffree-line-length-none -ffixed-line-length-none -fno-range-check
 
 # Specify module files (that all other files use). Order matters, because some files
 # are used by other files in mods list
@@ -57,8 +60,8 @@ src0 = ${O}/SurfaceAlbedoMod.o ${O}/SoilStateInitTimeConstMod.o ${O}/initVertica
 
 src1 = ${O}/clm_instMod.o ${O}/SoilWaterMovementMod.o ${O}/controlMod.o \
 	${O}/SoilTemperatureMod.o ${O}/MLLeafHeatCapacityMod.o \
-	${O}/MLLeafBoundaryLayerMod.o ${O}/MLLeafPhotosynthesisMod.o ${O}/MLLeafFluxesMod.o \
-	${O}/MLLongwaveRadiationMod.o ${O}/MLPlantHydraulicsMod.o \
+	${O}/MLLeafBoundaryLayerMod.o ${O}/MLPlantHydraulicsMod.o ${O}/MLLeafPhotosynthesisMod.o ${O}/MLLeafFluxesMod.o \
+	${O}/MLLongwaveRadiationMod.o  \
 	${O}/MLSoilFluxesMod.o ${O}/MLSolarRadiationMod.o ${O}/SurfaceResistanceMod.o \
 	${O}/TowerMetMod.o ${O}/clmDataMod.o ${O}/MLCanopyWaterMod.o ${O}/MLCanopyNitrogenProfileMod.o \
 	${O}/MLCanopyTurbulenceMod.o ${O}/MLinitVerticalMod.o

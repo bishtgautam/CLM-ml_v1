@@ -47,7 +47,7 @@ module MLCanopyFluxesMod
   subroutine MLCanopyFluxes (bounds, num_exposedvegp, filter_exposedvegp, &
   atm2lnd_inst, canopystate_inst, soilstate_inst, temperature_inst, waterstate_inst, &
   waterflux_inst, energyflux_inst, frictionvel_inst, surfalb_inst, solarabs_inst, &
-  mlcanopy_inst)
+  mlcanopy_inst, nout5, nout6, nout7, nout8, itim)
     !
     ! !DESCRIPTION:
     ! Compute fluxes for sunlit and shaded leaves at each level
@@ -73,6 +73,7 @@ module MLCanopyFluxesMod
     use MLLongwaveRadiationMod, only : LongwaveRadiation
     use MLPlantHydraulicsMod, only: SoilResistance, PlantResistance, LeafWaterPotential
     use MLSolarRadiationMod, only: SolarRadiation
+    use MLLeafFluxesMod, only : LeafFluxes
     !
     ! !ARGUMENTS:
     implicit none
@@ -91,6 +92,7 @@ module MLCanopyFluxesMod
     type(surfalb_type)     , intent(inout) :: surfalb_inst
     type(solarabs_type)    , intent(inout) :: solarabs_inst
     type(mlcanopy_type)    , intent(inout) :: mlcanopy_inst
+    integer :: nout5, nout6, nout7, nout8, itim
     !
     ! !LOCAL VARIABLES:
     integer  :: num_mlcan                               ! Number of vegetated patches for multilayer canopy
@@ -111,6 +113,8 @@ module MLCanopyFluxesMod
     real(r8) :: lat, lon                                ! Latitude and longitude (radians)
     real(r8) :: totpai                                  ! Canopy lai+sai for error check (m2/m2)
     real(r8) :: totrad                                  ! Direct beam + diffuse solar radiation (W/m2)
+    character(len=20) :: stepstring, substepstring
+    real(r8) :: start,finish
 
     ! These are used to accumulate flux variables over the model sub-time step.
     ! The last dimension is the number of variables
@@ -173,6 +177,7 @@ module MLCanopyFluxesMod
     eref           => mlcanopy_inst%eref_forcing             , &  ! Vapor pressure at reference height (Pa)
     uref           => mlcanopy_inst%uref_forcing             , &  ! Wind speed at reference height (m/s)
     pref           => mlcanopy_inst%pref_forcing             , &  ! Air pressure at reference height (Pa)
+    pref_prev      => mlcanopy_inst%pref_prev_forcing        , &  ! Air pressure at reference height from previous timestep (Pa)
     co2ref         => mlcanopy_inst%co2ref_forcing           , &  ! Atmospheric CO2 at reference height (umol/mol)
     o2ref          => mlcanopy_inst%o2ref_forcing            , &  ! Atmospheric O2 at reference height (mmol/mol)
     rhoair         => mlcanopy_inst%rhoair_forcing           , &  ! Air density at reference height (kg/m3)
@@ -226,6 +231,8 @@ module MLCanopyFluxesMod
     tleaf_bef      => mlcanopy_inst%tleaf_bef_leaf           , &  ! Leaf temperature for previous timestep (K)
     tleaf_hist     => mlcanopy_inst%tleaf_hist_leaf          , &  ! Leaf temperature (not sun/shade average) for history files (K)
     lwp            => mlcanopy_inst%lwp_leaf                 , &  ! Leaf water potential (MPa)
+    gs             => mlcanopy_inst%gs_leaf                  , &  ! Leaf stomatal conductance (mol H2O/m2 leaf/s)
+    h2osoi_liq     => waterstate_inst%h2osoi_liq_col         , &  ! Soil layer liquid water (kg H2O/m2)
     lwp_hist       => mlcanopy_inst%lwp_hist_leaf              &  ! Leaf water potential (not sun/shade average) for history files (MPa)
     )
 
@@ -236,6 +243,7 @@ module MLCanopyFluxesMod
 
     ! Set number of sub-time steps for flux calculations
 
+    write(*,*)'%itim',itim
     num_sub_steps = int(dtime / dtime_substep)
 
     ! Build filter of patches to process with multilayer canopy
@@ -244,12 +252,8 @@ module MLCanopyFluxesMod
     do fp = 1, num_exposedvegp
        p = filter_exposedvegp(fp)
        g = patch%gridcell(fp)
-!      if (grc%latdeg(g) .gt. -2.9_r8 .and. grc%latdeg(g) .lt. -2.7_r8) then
-!      if (grc%londeg(g) .gt. 294.5_r8 .and. grc%londeg(g) .lt. 295.5_r8) then
        num_mlcan = num_mlcan + 1
        filter_mlcan(num_mlcan) = p
-!      end if
-!      end if
     end do
 
     ! Initialize canopy vertical structure and profiles. This is only done
@@ -265,7 +269,7 @@ module MLCanopyFluxesMod
 
     if (ml_vert_init == 1) then
        if (masterproc) then
-          write (iulog,*) 'Attempting to initialize multilayer canopy vertical structure .....'
+          write (iulog,*) '%Attempting to initialize multilayer canopy vertical structure .....'
        end if
 
        call initVerticalStructure (bounds, num_mlcan, filter_mlcan, &
@@ -275,7 +279,7 @@ module MLCanopyFluxesMod
        atm2lnd_inst, mlcanopy_inst)
 
        if (masterproc) then
-          write (iulog,*) 'Successfully initialized multilayer canopy vertical structure'
+          write (iulog,*) '%Successfully initialized multilayer canopy vertical structure'
        end if
     end if
 
@@ -312,9 +316,11 @@ module MLCanopyFluxesMod
        tref(p) = forc_t(c)
        qref(p) = forc_q(c)
        pref(p) = forc_pbot(c)
+       if (itim == 1) pref_prev(p) = pref(p)
        lwsky(p) = forc_lwrad(c)
        qflx_rain(p) = forc_rain(c)
        qflx_snow(p) = forc_snow(c)
+
 
        ! CO2 and O2: CLM grid cell (g) -> patch (p). Note that the units
        ! conversion requires pbot.
@@ -330,7 +336,6 @@ module MLCanopyFluxesMod
 
        albsoib(p,ivis) = albgrd(c,ivis) ; albsoib(p,inir) = albgrd(c,inir)
        albsoid(p,ivis) = albgri(c,ivis) ; albsoid(p,inir) = albgri(c,inir)
-
        ! Soil evaporative resistance: CLM column (c) -> patch (p)
 
        soilres(p) = soilresis(c)
@@ -341,7 +346,8 @@ module MLCanopyFluxesMod
        soil_dz(p) = (z(c,snl(c)+1)-zi(c,snl(c))) ! Depth to temperature of first snow/soil layer (m)
        soil_tk(p) = thk(c,snl(c)+1)              ! Thermal conductivity of first snow/soil layer (W/m/K)
 
-    end do
+
+      end do
 
     ! Solar zenith angle. Need to subtract one time step (-dtime) because
     ! zenith angle is calculated for the beginning of the time step. So use
@@ -365,20 +371,38 @@ module MLCanopyFluxesMod
           write (iulog,*) nstep, coszen, surfalb_inst%coszen_col(c)
           call endrun (msg=' ERROR: MLCanopyFluxes: coszen error')
        end if
+
     end do
 
     ! Derived atmospheric input
 
     do fp = 1, num_mlcan
        p = filter_mlcan(fp)
+
        eref(p) = qref(p) * pref(p) / (mmh2o / mmdry + (1._r8 - mmh2o / mmdry) * qref(p))
        rhomol(p) = pref(p) / (rgas * tref(p))
        rhoair(p) = rhomol(p) * mmdry * (1._r8 - (1._r8 - mmh2o/mmdry) * eref(p) / pref(p))
        mmair(p) = rhoair(p) / rhomol(p)
        cpair(p) = cpd * (1._r8 + (cpw/cpd - 1._r8) * qref(p)) * mmair(p)
-       thref(p) = tref(p) + lapse_rate * zref(p)
+       !write(*,*)'cpair',cpair(p)
+       !write(*,*)'cpd  ',cpd
+       !write(*,*)'cpw  ',cpw
+       !write(*,*)'vref ',qref(p)
+       !write(*,*)'mmair',mmair
+          thref(p) = tref(p) + lapse_rate * zref(p)
        thvref(p) = thref(p) * (1._r8 + 0.61_r8 * qref(p))
-    end do
+       !write(*,*)'tref  :',tref(p)
+       !write(*,*)'lapse :',lapse_rate
+       !write(*,*)'zref  :',zref(p)
+       !write(*,*)'thref :',thref(p)
+       !write(*,*)'thvref:',thvref(p)
+       !write(*,*)'qref  :',qref(p) * pref(p)
+       !write(*,*)'eref  :',eref(p)
+       !write(*,*)'f     :',1._r8/ (mmh2o / mmdry + (1._r8 - mmh2o / mmdry) * qref(p))
+       !write(*,*)'q * f ',qref(p) / (mmh2o / mmdry + (1._r8 - mmh2o / mmdry) * qref(p))
+       !call exit(0)
+
+      end do
 
     ! Update leaf and stem area profile for current values
 
@@ -387,15 +411,19 @@ module MLCanopyFluxesMod
 
        ! Get values for current time step from CLM
 
-       lai(p) = elai(p)
-       sai(p) = esai(p)
+       if (itim == 1) then
+         lai(p) = elai(p)
+         sai(p) = esai(p)
+       endif
 
        ! Vertical profiles
 
+       write(*,*)'% Adjusting dlai,dsai ',lai(p),sai(p)
        do ic = 1, ncan(p)
           dlai(p,ic) = dlai_frac(p,ic) * lai(p)
           dsai(p,ic) = dsai_frac(p,ic) * sai(p)
           dpai(p,ic) = dlai(p,ic) + dsai(p,ic)
+          !write(*,*)'%',dlai(p,ic),dsai(p,ic),dpai(p,ic)
        end do
 
        totpai = sum(dpai(p,1:ncan(p)))
@@ -407,31 +435,51 @@ module MLCanopyFluxesMod
 
     ! Solar radiation transfer through the canopy
 
-    call SolarRadiation (bounds, num_mlcan, filter_mlcan, mlcanopy_inst)
+    write(*,*)'%++++++++++++++++++++++ Solar Radiation ++++++++++++++++++++++'
+    call SolarRadiation (bounds, num_mlcan, filter_mlcan, mlcanopy_inst, itim)
 
     ! Plant hydraulics
 
+    !write(*,*)'SoilResistance'
     call SoilResistance (num_mlcan, filter_mlcan, &
     soilstate_inst, waterstate_inst, mlcanopy_inst)
 
+    !write(*,*)'PlantResistance'
     call PlantResistance (num_mlcan, filter_mlcan, mlcanopy_inst)
 
     ! Canopy profile of photosynthetic capacity
 
+    !write(*,*)'CanopyNitrogenProfile'
     call CanopyNitrogenProfile (num_mlcan, filter_mlcan, mlcanopy_inst)
+
+    do fp = 1, num_mlcan
+      p = filter_mlcan(fp)
+      c = patch%column(p)
+      rhg(p) = exp(grav * mmh2o * smp_l(c,1)*1.e-03_r8 / (rgas * t_soisno(c,1)))
+   end do
+
+   p = 1
+   write(nout8,*)swskyb(p,:), swskyd(p,:), lwsky(p), tref(p), qref(p), pref(p), uref(p), &
+   co2ref(p), o2ref(p), albgrd(c,:), albgri(c,:), tg(p), soil_t(p), solar_zen(p), rhg(p), soilres(p),soil_tk(p), h2osoi_liq(c,1:10)
 
     ! Use sub-stepping to calculate fluxes over the full time step
 
+    write(*,*)'% num_sub_steps = ',num_sub_steps
     do niter = 1, num_sub_steps
 
        ! Save values for previous timestep
+      !write(*,*)'%  Sub-stepping: ',niter
 
-       do fp = 1, num_mlcan
+!      !!write(*,*)'Tleaf:'
+      do fp = 1, num_mlcan
           p = filter_mlcan(fp)
+          !tg(p) = 295.93499389648440_r8
           tg_bef(p) = tg(p)
+!          !!write(*,*)'tg: ',tg(p)
           do ic = 1, ncan(p)
              tleaf_bef(p,ic,isun) = tleaf(p,ic,isun)
              tleaf_bef(p,ic,isha) = tleaf(p,ic,isha)
+!             !!write(*,*)ic,tleaf(p,ic,isun),tleaf(p,ic,isha)
              tair_bef(p,ic) = tair(p,ic)
              eair_bef(p,ic) = eair(p,ic)
              cair_bef(p,ic) = cair(p,ic)
@@ -444,18 +492,24 @@ module MLCanopyFluxesMod
 
        ! Longwave radiation transfer through the canopy
 
-       call LongwaveRadiation (bounds, num_mlcan, filter_mlcan, mlcanopy_inst)
+       if (mlcanopy_inst%screen_output == 1 .and. niter > 0) write(*,*)'%    ++++++++++++++++++++++ Longwave Radiation ++++++++++++++++++++++'
+       call LongwaveRadiation (bounds, num_mlcan, filter_mlcan, mlcanopy_inst, itim, niter)
 
        ! Net radiation at each layer and at ground
 
+       write(stepstring,*)itim
+       write(substepstring,*)niter
+       if (mlcanopy_inst%screen_output == 1 .and. niter == 12)write(*,*)'clm.rnleaf{'// trim(adjustl(stepstring)) // ',' // trim(adjustl(substepstring))  // '} = ['
        do fp = 1, num_mlcan
           p = filter_mlcan(fp)
           do ic = 1, ncan(p)
              rnleaf(p,ic,isun) = swleaf(p,ic,isun,ivis) + swleaf(p,ic,isun,inir) + lwleaf(p,ic,isun)
              rnleaf(p,ic,isha) = swleaf(p,ic,isha,ivis) + swleaf(p,ic,isha,inir) + lwleaf(p,ic,isha)
-          end do
+             if (mlcanopy_inst%screen_output == 1 .and. niter == 12)write(*,*)ic,rnleaf(p,ic,:)
+            end do
           rnsoi(p) = swsoi(p,ivis) + swsoi(p,inir) + lwsoi(p)
        end do
+       if (mlcanopy_inst%screen_output == 1 .and. niter == 12)write(*,*)'];'
 
        ! Leaf heat capacity
 
@@ -463,13 +517,21 @@ module MLCanopyFluxesMod
 
        ! Leaf boundary layer conductance
 
-       call LeafBoundaryLayer (num_mlcan, filter_mlcan, isun, mlcanopy_inst)
-       call LeafBoundaryLayer (num_mlcan, filter_mlcan, isha, mlcanopy_inst)
+       if (mlcanopy_inst%screen_output == 1 .and. niter > 0)write(*,*)'%    ++++++++++++++++++++++ LBL ++++++++++++++++++++++'
+       if (mlcanopy_inst%screen_output == 1 .and. niter > 0)write(*,*)'clm.gbhvc{' // trim(adjustl(stepstring)) // ',' // trim(adjustl(substepstring))  // '} = ['
+       call LeafBoundaryLayer (num_mlcan, filter_mlcan, isun, mlcanopy_inst, itim, niter)
+       call LeafBoundaryLayer (num_mlcan, filter_mlcan, isha, mlcanopy_inst, itim, niter)
+       if (mlcanopy_inst%screen_output == 1 .and. niter > 0)write(*,*)'];'
 
        ! Photosynthesis and stomatal conductance
 
-       call LeafPhotosynthesis (num_mlcan, filter_mlcan, isun, mlcanopy_inst)
-       call LeafPhotosynthesis (num_mlcan, filter_mlcan, isha, mlcanopy_inst)
+       if (mlcanopy_inst%screen_output == 1 .and. niter > 0) write(*,*)'%    ++++++++++++++++++++++ Photosynthesis ++++++++++++++++++++++'
+       if (mlcanopy_inst%screen_output == 1 .and. niter > 0) write(*,*)'clm.gs{' // trim(adjustl(stepstring)) // ',' // trim(adjustl(substepstring))  // '} = ['
+       mlcanopy_inst%istep = itim
+       mlcanopy_inst%isubstep = niter
+       call LeafPhotosynthesis (num_mlcan, filter_mlcan, isun, mlcanopy_inst, itim, niter)
+       call LeafPhotosynthesis (num_mlcan, filter_mlcan, isha, mlcanopy_inst, itim, niter)
+       if (mlcanopy_inst%screen_output == 1 .and. niter > 0)write(*,*)'];'
 
        ! Relative humidity in soil airspace
 
@@ -478,16 +540,24 @@ module MLCanopyFluxesMod
           c = patch%column(p)
           rhg(p) = exp(grav * mmh2o * smp_l(c,1)*1.e-03_r8 / (rgas * t_soisno(c,1)))
        end do
-
+    
        ! Canopy turbulence, scalar source/sink fluxes for leaves and soil, and
        ! scalar profiles above and within the canopy
 
-       call CanopyTurbulence (niter, num_mlcan, filter_mlcan, mlcanopy_inst)
+       if (mlcanopy_inst%screen_output == 1 .and. niter > 0) write(*,*)'%    ++++++++++++++++++++++ CanopyTurbulence ++++++++++++++++++++++'
+       call CanopyTurbulence (niter, num_mlcan, filter_mlcan, mlcanopy_inst,itim, niter)
 
        ! Update leaf water potential for the current transpiration rate
 
-       call LeafWaterPotential (num_mlcan, filter_mlcan, isun, mlcanopy_inst)
-       call LeafWaterPotential (num_mlcan, filter_mlcan, isha, mlcanopy_inst)
+       if (mlcanopy_inst%screen_output == 1 .and. niter > 0) write(*,*)'%    ++++++++++++++++++++++ Update LeafWaterPotential ++++++++++++++++++++++'
+       mlcanopy_inst%update_lwp = 1
+       do fp = 1, num_mlcan
+         p = filter_mlcan(p)
+         do ic = 1, ncan(p)
+            call LeafWaterPotential (num_mlcan, filter_mlcan, ic, isun, mlcanopy_inst)
+            call LeafWaterPotential (num_mlcan, filter_mlcan, ic, isha, mlcanopy_inst)
+         enddo
+       enddo
 
        ! Update canopy intercepted water for evaporation and dew
 
@@ -497,13 +567,14 @@ module MLCanopyFluxesMod
        ! variables are instantaneous for the final sub-time step.
 
        call SubTimeStepFluxIntegration (niter, num_sub_steps, num_mlcan, filter_mlcan, &
-       flux_accumulator, flux_accumulator_profile, flux_accumulator_leaf, mlcanopy_inst)
+       flux_accumulator, flux_accumulator_profile, flux_accumulator_leaf, mlcanopy_inst,nout5, nout6, nout7)
+       !if (niter == 2) call exit(0)
 
     end do    ! End sub-stepping loop
 
     ! Sum leaf and soil fluxes and other canopy diagnostics
 
-    call CanopyFluxesDiagnostics (num_mlcan, filter_mlcan, mlcanopy_inst)
+    call CanopyFluxesDiagnostics (num_mlcan, filter_mlcan, mlcanopy_inst, nout7)
 
     ! Leaf temperature and leaf water potential are prognostic variables
     ! for sunlit and shaded leaves. But sun/shade fractions change over
@@ -527,10 +598,10 @@ module MLCanopyFluxesMod
           ! Now merge sun/shade leaves
 
           if (dpai(p,ic) > 0._r8) then
-             tleaf(p,ic,isun) = tleaf(p,ic,isun) * fracsun(p,ic) + tleaf(p,ic,isha) * (1._r8 - fracsun(p,ic))
-             tleaf(p,ic,isha) = tleaf(p,ic,isun)
-             lwp(p,ic,isun) = lwp(p,ic,isun) * fracsun(p,ic) + lwp(p,ic,isha) * (1._r8 - fracsun(p,ic))
-             lwp(p,ic,isha) = lwp(p,ic,isun)
+             !tleaf(p,ic,isun) = tleaf(p,ic,isun) * fracsun(p,ic) + tleaf(p,ic,isha) * (1._r8 - fracsun(p,ic))
+             !tleaf(p,ic,isha) = tleaf(p,ic,isun)
+             !lwp(p,ic,isun) = lwp(p,ic,isun) * fracsun(p,ic) + lwp(p,ic,isha) * (1._r8 - fracsun(p,ic))
+             !lwp(p,ic,isha) = lwp(p,ic,isun)
           end if
 
        end do
@@ -558,15 +629,21 @@ module MLCanopyFluxesMod
           t_ref2m(p) = 0._r8
           q_ref2m(p) = 0._r8
           fsa(p) = swveg(p,ivis) + swveg(p,inir) + swsoi(p,ivis) + swsoi(p,inir)
-       end do
+         end do
     end if
+
+    if (itim > 1) then
+       do fp = 1, num_mlcan
+          pref_prev(p) = pref(p)
+       enddo
+    endif
 
     end associate
   end subroutine MLCanopyFluxes
 
   !-----------------------------------------------------------------------
   subroutine SubTimeStepFluxIntegration (niter, num_sub_steps, num_filter, filter, &
-  flux_accumulator, flux_accumulator_profile, flux_accumulator_leaf, mlcanopy_inst)
+  flux_accumulator, flux_accumulator_profile, flux_accumulator_leaf, mlcanopy_inst, nout5, nout6, nout7)
     !
     ! !DESCRIPTION:
     ! Integrate fluxes over model sub-time steps
@@ -588,9 +665,12 @@ module MLCanopyFluxesMod
     integer  :: fp                                              ! Filter index
     integer  :: p                                               ! Patch index for CLM g/l/c/p hierarchy
     integer  :: i,j,k                                           ! Variable index
+    integer :: ic
+    integer :: nout5, nout6, nout7
     !---------------------------------------------------------------------
 
     associate ( &
+    ncan           => mlcanopy_inst%ncan_canopy              , &  ! Number of aboveground layers
     ustar       => mlcanopy_inst%ustar_canopy         , &  ! Friction velocity (m/s)
     lwup        => mlcanopy_inst%lwup_canopy          , &  ! Upward longwave radiation above canopy (W/m2)
     qflx_intr   => mlcanopy_inst%qflx_intr_canopy     , &  ! Intercepted precipitation (kg H2O/m2/s)
@@ -605,6 +685,9 @@ module MLCanopyFluxesMod
     gac0        => mlcanopy_inst%gac0_soil            , &  ! Aerodynamic conductance for soil fluxes (mol/m2/s)
     shair       => mlcanopy_inst%shair_profile        , &  ! Canopy layer air sensible heat flux (W/m2)
     etair       => mlcanopy_inst%etair_profile        , &  ! Canopy layer air water vapor flux (mol H2O/m2/s)
+    tair        => mlcanopy_inst%tair_profile             , &  ! Canopy layer air temperature (K)
+    eair        => mlcanopy_inst%eair_profile             , &  ! Canopy layer vapor pressure (Pa)
+    cair        => mlcanopy_inst%cair_profile             , &  ! Canopy layer atmospheric CO2 (umol/mol)
     stair       => mlcanopy_inst%stair_profile        , &  ! Canopy layer air storage heat flux (W/m2)
     gac         => mlcanopy_inst%gac_profile          , &  ! Canopy layer aerodynamic conductance for scalars (mol/m2/s)
     lwleaf      => mlcanopy_inst%lwleaf_leaf          , &  ! Leaf absorbed longwave radiation (W/m2 leaf)
@@ -616,6 +699,7 @@ module MLCanopyFluxesMod
     stleaf      => mlcanopy_inst%stleaf_leaf          , &  ! Leaf storage heat flux (W/m2 leaf)
     anet        => mlcanopy_inst%anet_leaf            , &  ! Leaf net photosynthesis (umol CO2/m2 leaf/s)
     agross      => mlcanopy_inst%agross_leaf          , &  ! Leaf gross photosynthesis (umol CO2/m2 leaf/s)
+    tleaf       => mlcanopy_inst%tleaf_leaf               , &  ! Leaf temperature (K)
     gs          => mlcanopy_inst%gs_leaf                &  ! Leaf stomatal conductance (mol H2O/m2 leaf/s)
     )
 
@@ -645,6 +729,8 @@ module MLCanopyFluxesMod
        i = i + 1; flux_accumulator(p,i) = flux_accumulator(p,i) + qflx_intr(p)
        i = i + 1; flux_accumulator(p,i) = flux_accumulator(p,i) + qflx_tflrain(p)
        i = i + 1; flux_accumulator(p,i) = flux_accumulator(p,i) + qflx_tflsnow(p)
+              
+       write(nout5,*)flux_accumulator(p,1:i)
 
        j = 0
        j = j + 1; flux_accumulator_profile(p,:,j) = flux_accumulator_profile(p,:,j) + shair(p,:)
@@ -677,6 +763,14 @@ module MLCanopyFluxesMod
           flux_accumulator(p,:) = flux_accumulator(p,:) / float(num_sub_steps)
           flux_accumulator_profile(p,:,:) = flux_accumulator_profile(p,:,:) / float(num_sub_steps)
           flux_accumulator_leaf(p,:,:,:) = flux_accumulator_leaf(p,:,:,:) / float(num_sub_steps)
+
+          do ic = 1, ncan(p)
+            write(nout6,*)ic,flux_accumulator_profile(p,ic,1:j), tair(p,ic),eair(p,ic),cair(p,ic),tleaf(p,ic,:)
+          enddo
+   
+          do ic = 1, ncan(p)
+            !write(nout7,*)ic,flux_accumulator_leaf(p,ic,:,1:k)
+          enddo
 
           ! Map fluxes to variables: variables must be in the same order as above
 
@@ -724,7 +818,7 @@ module MLCanopyFluxesMod
   end subroutine SubTimeStepFluxIntegration
 
   !-----------------------------------------------------------------------
-  subroutine CanopyFluxesDiagnostics (num_filter, filter, mlcanopy_inst)
+  subroutine CanopyFluxesDiagnostics (num_filter, filter, mlcanopy_inst, nout7)
     !
     ! !DESCRIPTION:
     ! Sum leaf and soil fluxes to get canopy fluxes and calculate
@@ -735,6 +829,7 @@ module MLCanopyFluxesMod
     use MLclm_varctl, only : turb_type
     use MLclm_varpar, only : isun, isha
     use MLWaterVaporMod, only : LatVap
+    use MLclm_varctl, only : minlwp_SPA
     !
     ! !ARGUMENTS:
     implicit none
@@ -753,6 +848,7 @@ module MLCanopyFluxesMod
     real(r8) :: flux                    ! Turbulent fluxes + storage (W/m2)
     real(r8) :: fracgreen               ! Green fraction of plant area index: lai/(lai+sai)
     real(r8) :: minlwp                  ! Minimum leaf water potential for canopy water stress diagnostic (MPa)
+    integer :: nout7
     !---------------------------------------------------------------------
 
     associate ( &
@@ -926,6 +1022,7 @@ module MLCanopyFluxesMod
              etsrc(p,ic) = 0._r8
              fco2src(p,ic) = 0._r8
           end if
+          write(nout7,*)ic,lwp_mean(p,ic)
        end do
 
        ! Sum leaf fluxes
@@ -1059,7 +1156,7 @@ module MLCanopyFluxesMod
 
        ! Diagnose fraction of the canopy that is water stressed
 
-       minlwp = -2._r8
+       minlwp = minlwp_SPA
        fracminlwp(p) = 0._r8
 
        do ic = 1, ncan(p)

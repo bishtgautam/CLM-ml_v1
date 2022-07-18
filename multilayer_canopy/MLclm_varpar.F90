@@ -13,7 +13,7 @@ module MLclm_varpar
 
   ! Parameters for multilayer canopy
 
-  integer, parameter :: nlevmlcan = 100     ! Number of layers in multilayer canopy model
+  integer, parameter :: nlevmlcan = 500     ! Number of layers in multilayer canopy model
   integer, parameter :: nleaf = 2           ! Number of leaf types (sunlit and shaded)
   integer, parameter :: isun = 1            ! Sunlit leaf index
   integer, parameter :: isha = 2            ! Shaded leaf index

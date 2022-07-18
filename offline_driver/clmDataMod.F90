@@ -89,6 +89,7 @@ contains
        elai(p) = elai_loc(1,1,1)
        esai(p) = esai_loc(1,1,1)
     end do
+    !write(*,*)'elai: ',elai,'slai:',esai
 
     ! All columns (c) get the same coszen
 
@@ -105,8 +106,10 @@ contains
     do c = begc, endc
 
        if (clm_phys == 'CLM4_5') then
+          write(*,*)'%h2osoi_clm45:',strt
           do j = 1, nlevgrnd
              h2osoi_vol(c,j) = h2osoi_clm45(1,1,j)
+             write(*,*)'%',j,h2osoi_clm45(1,1,j)
           end do
        else if (clm_phys == 'CLM5_0') then
           do j = 1, nlevsoi
@@ -129,9 +132,11 @@ contains
 
        ! Set liquid water and ice
 
+       write(*,*)'%h2osoi: '
        do j = 1, nlevgrnd
           h2osoi_liq(c,j) = h2osoi_vol(c,j) * dz(c,j) * denh2o
           h2osoi_ice(c,j) = 0._r8
+          write(*,*)'%',j,h2osoi_liq(c,j),h2osoi_vol(c,j),dz(c,j),denh2o
        end do
 
     end do

@@ -129,6 +129,10 @@ contains
 
        end do
     end do
+    !write(*,*)'h2osoi_vol ', h2osoi_vol(c,1),'inc ',inc
+    !write(*,*)'albsat(soilcol,ib) = ',albsat(soilcol,:),'albdry(soilcol,ib)',albdry(soilcol,:)
+    !write(*,*)'albsoib: ',albsoib
+    !write(*,*)'albsoid: ',albsoid
 
     end associate
   end subroutine SoilAlbedo

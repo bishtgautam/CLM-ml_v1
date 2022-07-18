@@ -68,6 +68,7 @@ contains
              ! Leaf specific conductance, soil-to-leaf (mmol H2O/m2/s/MPa)
 
              lsc(p,ic) = 1._r8 / (rsoil(p) + rplant)
+             !write(*,*)'lsc ',lsc(p,ic),rplant, rsoil(p)
 
           else
 
@@ -98,6 +99,7 @@ contains
     use SoilStateType, only : soilstate_type
     use WaterStateType, only : waterstate_type
     use MLCanopyFluxesType, only : mlcanopy_type
+    use MLclm_varctl, only : minlwp_SPA
     !
     ! !ARGUMENTS:
     implicit none
@@ -126,7 +128,7 @@ contains
     real(r8) :: smp_mpa(nlevsoi)                 ! Soil matric potential (MPa)
     real(r8) :: evap(nlevsoi)                    ! Maximum transpiration (mmol H2O/m2/s)
     real(r8) :: totevap                          ! Total maximum transpiration (mmol H2O/m2/s)
-    real(r8) :: minlwp_SPA = -2._r8              ! Minimum leaf water potential (MPa) - legacy from original SPA implementation
+    !real(r8) :: minlwp_SPA = -2._r8              ! Minimum leaf water potential (MPa) - legacy from original SPA implementation
     !---------------------------------------------------------------------
 
     associate ( &
@@ -174,7 +176,9 @@ contains
 
           hk = hk_l(c,j) * (1.e-03_r8 / head)                       ! mm/s -> m/s -> m2/s/MPa
           hk = hk * denh2o / mmh2o * 1000._r8                       ! m2/s/MPa -> mmol/m/s/MPa
+          !write(*,*)'hk_l ',hk_l(c,j)
           smp_mpa(j) = smp_l(c,j) * 1.e-03_r8 * head                ! mm -> m -> MPa
+          !write(*,*)'smp_l',smp_l(c,j),'head',head
 
           ! Root biomass density: g biomass / m3 soil
 
@@ -200,6 +204,7 @@ contains
           ! Belowground resistance (MPa.s.m2/mmol H2O) 
 
           soilr = soilr1 + soilr2
+          !write(*,*)'soilr: ',soilr1,soilr2
 
           ! Total belowground resistance. Sum the conductances (1/soilr) for
           ! each soil layer and then convert back to a resistance after the
@@ -215,11 +220,31 @@ contains
           if (h2osoi_ice(c,j) > 0._r8) evap(j) = 0._r8
           totevap = totevap + evap(j)
 
+#if 0
+          write(*,*)''
+          write(*,*)'root_biomass         ',root_biomass
+          write(*,*)'root_radius          ',root_radius_SPA(patch%itype(p))
+          write(*,*)'root_density         ',root_density_SPA(patch%itype(p))
+          write(*,*)'root_resisit         ',root_resist_SPA(patch%itype(p))
+          write(*,*)'rootfr               ',rootfr(p,j)
+          write(*,*)'root_biomass_density ',root_biomass_density
+          write(*,*)'root_dist            ',root_dist
+          write(*,*)'root_length_density  ',root_length_density
+          write(*,*)'dz                   ',dz(c,j)
+          write(*,*)'hk                   ',hk
+          write(*,*)'evap                 ',evap(j)
+          write(*,*)'psi_mpa              ',smp_mpa(j)
+          write(*,*)'blw_grnd_cond        ',rsoil(p)
+          write(*,*)'smp_l                ',smp_l(c,j)
+          write(*,*)'head                 ',head
+#endif
+
        end do
 
        ! Belowground resistance: resistance = 1 / conductance
 
        rsoil(p) = lai(p) / rsoil(p)
+       !write(*,*)'lai: ',lai(p)
 
        ! Weighted soil water potential (MPa) and fractional uptake from soil layers
 
@@ -233,6 +258,7 @@ contains
           else
              soil_et_loss(p,j) = 1._r8 / nlayers
           end if
+          !write(*,*)'psi: ',psis(p)
        end do
 
        if (totevap > 0._r8) then
@@ -240,14 +266,17 @@ contains
        else
           psis(p) = minlwp_SPA
        end if
+       !write(*,*)'SoilResistance: stopping',psis(p)
+       !call exit(0)
+       !write(*,*)'plant%leaf_lsc(ileaf)',psis(p)
 
     end do
-
+    
     end associate
   end subroutine SoilResistance
 
   !-----------------------------------------------------------------------
-  subroutine LeafWaterPotential (num_filter, filter, il, mlcanopy_inst)
+  subroutine LeafWaterPotential (num_filter, filter, ic_in, il, mlcanopy_inst)
     !
     ! !DESCRIPTION:
     ! Calculate leaf water potential
@@ -258,11 +287,13 @@ contains
     use pftconMod, only : pftcon
     use MLclm_varctl, only : dtime_substep
     use MLCanopyFluxesType, only : mlcanopy_type
+    use MLWaterVaporMod, only : SatVap
     !
     ! !ARGUMENTS:
     implicit none
     integer, intent(in) :: num_filter            ! Number of patches in filter
     integer, intent(in) :: filter(:)             ! Patch filter
+    integer, intent(in) :: ic_in
     integer, intent(in) :: il                    ! Sunlit (1) or shaded (2) leaf index
     type(mlcanopy_type), intent(inout) :: mlcanopy_inst
     !
@@ -275,6 +306,7 @@ contains
     real(r8) :: y0                               ! Leaf water potential at beginning of timestep (MPa)
     real(r8) :: dy                               ! Change in leaf water potential (MPa)
     real(r8) :: a, b                             ! Intermediate calculation
+    real(r8) :: num1, esat, desat, qsat, dqsat, gleaf
     !---------------------------------------------------------------------
 
     associate ( &
@@ -286,6 +318,13 @@ contains
     zs          => mlcanopy_inst%zs_profile   , &  ! Canopy layer height for scalar concentration and source (m)
     lsc         => mlcanopy_inst%lsc_profile  , &  ! Canopy layer leaf-specific conductance (mmol H2O/m2 leaf/s/MPa)
     trleaf      => mlcanopy_inst%trleaf_leaf  , &  ! Leaf transpiration flux (mol H2O/m2 leaf/s)
+    pref      => mlcanopy_inst%pref_forcing   , &  ! Air pressure at reference height (Pa)
+    eair      => mlcanopy_inst%eair_profile   , &  ! Canopy layer vapor pressure (Pa)
+    fdry      => mlcanopy_inst%fdry_profile   , &  ! Canopy layer fraction of plant area index that is green and dry
+    gbh       => mlcanopy_inst%gbh_leaf       , &  ! Leaf boundary layer conductance: heat (mol/m2 leaf/s)
+    gbv       => mlcanopy_inst%gbv_leaf       , &  ! Leaf boundary layer conductance: H2O (mol H2O/m2 leaf/s)
+    gs        => mlcanopy_inst%gs_leaf        , &  ! Leaf stomatal conductance (mol H2O/m2 leaf/s)
+    tleaf_bef => mlcanopy_inst%tleaf_bef_leaf , &  ! Leaf temperature for previous timestep (K)
                                                    ! *** Input/Output ***
     lwp         => mlcanopy_inst%lwp_leaf       &  ! Leaf water potential (MPa)
     )
@@ -301,15 +340,30 @@ contains
 
     do fp = 1, num_filter
        p = filter(fp)
-       do ic = 1, ncan(p)
+       do ic = ic_in, ic_in
 
           if (dpai(p,ic) > 0._r8) then
+            !if (ic == 6) trleaf(p,ic,il) = 0._r8
              y0 = lwp(p,ic,il)
-             a = psis(p) - head * zs(p,ic) - 1000._r8 * trleaf(p,ic,il) / lsc(p,ic)
-             b = capac_SPA(patch%itype(p)) / lsc(p,ic)
-             dy = (a - y0) * (1._r8 - exp(-dtime/b))
-             lwp(p,ic,il) = y0 + dy
-          else
+             if (mlcanopy_inst%update_lwp == 0) then
+
+               call SatVap (tleaf_bef(p,ic,il), esat, desat)
+               qsat = esat / pref(p) ; dqsat = desat / pref(p)
+        
+               num1 = qsat - eair(p,ic) / pref(p)
+               gleaf = gs(p,ic,il) * gbv(p,ic,il) / (gs(p,ic,il) + gbv(p,ic,il))
+               !if (ic == 6) write(*,*)ic,il,'gleaf ',gleaf,'gs',gs(p,ic,il),'gbv',gbv(p,ic,il)
+
+               trleaf(p,ic,il) = (gleaf * fdry(p,ic) * num1)
+            endif
+
+            a = psis(p) - head * zs(p,ic) - 1000._r8 * trleaf(p,ic,il) / lsc(p,ic)
+            b = capac_SPA(patch%itype(p)) / lsc(p,ic)
+            dy = (a - y0) * (1._r8 - exp(-dtime/b))
+            lwp(p,ic,il) = y0 + dy
+            !write(*,*)'a,b',a,b,psis(p)
+            !write(*,*)'lwp: ',p,ic,il,y0,dy,y0 + dy,trleaf(p,ic,il)
+            else
              lwp(p,ic,il) = 0._r8
           end if
 

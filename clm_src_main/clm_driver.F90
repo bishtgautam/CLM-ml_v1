@@ -21,7 +21,7 @@ module clm_driver
 contains
 
   !-----------------------------------------------------------------------
-  subroutine clm_drv (bounds, time_indx, fin)
+  subroutine clm_drv (bounds, time_indx, fin, nout5, nout6, nout7, nout8, itim)
     !
     ! !DESCRIPTION:
     ! Main CLM model driver to calculate fluxes
@@ -46,6 +46,7 @@ contains
     integer  :: f                                ! Filter index
     integer  :: p                                ! Patch index for CLM g/l/c/p hierarchy
     integer  :: c                                ! Column index for CLM g/l/c/p hierarchy
+    integer :: nout5, nout6, nout7, nout8, itim
 
     real(r8) :: cv (bounds%begc:bounds%endc,-nlevsno+1:nlevgrnd)   ! CLM: soil heat capacity (J/m2/K)
     real(r8) :: tk (bounds%begc:bounds%endc,-nlevsno+1:nlevgrnd)   ! CLM: soil thermal conductivity at layer interface (W/m/K)
@@ -109,7 +110,7 @@ contains
     call MLCanopyFluxes (bounds, filter%num_exposedvegp, filter%exposedvegp, &
     atm2lnd_inst, canopystate_inst, soilstate_inst, temperature_inst, waterstate_inst, &
     waterflux_inst, energyflux_inst, frictionvel_inst, surfalb_inst, solarabs_inst, &
-    mlcanopy_inst)
+    mlcanopy_inst, nout5, nout6, nout7, nout8, itim)
 
     ! Update CLM soil temperatures
 

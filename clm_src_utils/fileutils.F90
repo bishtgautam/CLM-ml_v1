@@ -71,17 +71,17 @@ contains
 
     locfn = get_filename( fulpath )
     if (len_trim(locfn) == 0) then
-       write(iulog,*)'(GETFIL): local filename has zero length'
+       write(iulog,*)'%(GETFIL): local filename has zero length'
        call endrun()
     else
-       write(iulog,*)'(GETFIL): attempting to find local file ',trim(locfn)
+       write(iulog,*)'%(GETFIL): attempting to find local file ',trim(locfn)
     endif
 
     ! first check if file is in current working directory.
 
     inquire (file=locfn,exist=lexist)
     if (lexist) then
-       write(iulog,*) '(GETFIL): using ',trim(locfn), ' in current working directory'
+       write(iulog,*) '%(GETFIL): using ',trim(locfn), ' in current working directory'
        RETURN
     endif
 
@@ -90,10 +90,10 @@ contains
 
     inquire (file=fulpath,exist=lexist)
     if (lexist) then
-       write(iulog,*) '(GETFIL): using ',trim(fulpath)
+       write(iulog,*) '%(GETFIL): using ',trim(fulpath)
        RETURN
     else
-       write(iulog,*)'(GETFIL): failed getting file from full path: ', fulpath
+       write(iulog,*)'%(GETFIL): failed getting file from full path: ', fulpath
        if (iflag==0) then
           call endrun()
        else

@@ -24,7 +24,7 @@ module MLLongwaveRadiationMod
 contains
 
   !-----------------------------------------------------------------------
-  subroutine LongwaveRadiation (bounds, num_filter, filter, mlcanopy_inst)
+  subroutine LongwaveRadiation (bounds, num_filter, filter, mlcanopy_inst, istep, isubstep)
     !
     ! !DESCRIPTION:
     ! Longwave radiation transfer through canopy
@@ -38,11 +38,12 @@ contains
     integer, intent(in) :: num_filter           ! Number of patches in filter
     integer, intent(in) :: filter(:)            ! Patch filter
     type(mlcanopy_type), intent(inout) :: mlcanopy_inst
+    integer :: istep, isubstep
     !---------------------------------------------------------------------
 
     select case (longwave_type)
     case (1)
-       call Norman (bounds, num_filter, filter, mlcanopy_inst)
+       call Norman (bounds, num_filter, filter, mlcanopy_inst, istep, isubstep)
     case default
        call endrun (msg=' ERROR: LongwaveRadiation: longwave_type not valid')
     end select
@@ -50,7 +51,7 @@ contains
   end subroutine LongwaveRadiation
 
   !-----------------------------------------------------------------------
-  subroutine Norman (bounds, num_filter, filter, mlcanopy_inst)
+  subroutine Norman (bounds, num_filter, filter, mlcanopy_inst, istep, isubstep)
     !
     ! !DESCRIPTION:
     ! Longwave radiation transfer through canopy using Norman (1979)
@@ -70,6 +71,7 @@ contains
     integer, intent(in) :: num_filter           ! Number of patches in filter
     integer, intent(in) :: filter(:)            ! Patch filter
     type(mlcanopy_type), intent(inout) :: mlcanopy_inst
+    integer :: istep, isubstep
     !
     ! !LOCAL VARIABLES:
     integer  :: fp                              ! Filter index
@@ -96,6 +98,7 @@ contains
     real(r8) :: lwabs                           ! Absorbed longwave flux (W/m2 ground)
     real(r8) :: lwup_layer(bounds%begp:bounds%endp,0:nlevmlcan) ! Upward longwave flux above canopy layer (W/m2 ground)
     real(r8) :: lwdn_layer(bounds%begp:bounds%endp,0:nlevmlcan) ! Downward longwave flux onto canopy layer (W/m2 ground)
+    character(len=20) :: stepstring, substepstring
     !---------------------------------------------------------------------
 
     associate ( &
@@ -145,8 +148,8 @@ contains
        ! Emitted longwave radiation is weighted average of sunlit and shaded leaves
 
        do ic = nbot(p), ntop(p)
-          lw_source_sun = emleaf(patch%itype(p)) * sb * tleaf(p,ic,isun)**4
-          lw_source_sha = emleaf(patch%itype(p)) * sb * tleaf(p,ic,isha)**4
+          lw_source_sun = emleaf(patch%itype(p)) * sb * tleaf(p,ic,isun)**4._r8
+          lw_source_sha = emleaf(patch%itype(p)) * sb * tleaf(p,ic,isha)**4._r8
           lw_source(ic) = (lw_source_sun * fracsun(p,ic) + lw_source_sha * (1._r8 - fracsun(p,ic))) &
                         * (1._r8 - td(p,ic))
        end do
@@ -164,7 +167,7 @@ contains
        atri(m) = 0._r8
        btri(m) = 1._r8
        ctri(m) = -(1._r8 - emg)
-       dtri(m) = emg * sb * tg(p)**4
+       dtri(m) = emg * sb * tg(p)**4.0_r8
 
        ! Soil: downward flux
 
@@ -268,6 +271,9 @@ contains
 
        lwveg(p) = 0._r8
 
+       write(stepstring,*)istep
+       write(substepstring,*)isubstep
+       if (mlcanopy_inst%screen_output == 1 .and. isubstep == 12)write(*,*)'clm.labs{' // trim(adjustl(stepstring)) // ',' // trim(adjustl(substepstring))  // '} = ['
        do ic = nbot(p), ntop(p)
 
           ! Absorbed longwave radiation for layer. Note special case for first
@@ -285,12 +291,15 @@ contains
                 - 2._r8 * lw_source(ic)
           lwleaf(p,ic, isun) = lwabs / dpai(p,ic)
           lwleaf(p,ic, isha) = lwabs / dpai(p,ic)
+          if (mlcanopy_inst%screen_output == 1 .and. isubstep == 12)write(*,*)ic,lwleaf(p,ic,isun),lwleaf(p,ic,isha)
 
           ! Sum longwave radiation absorbed by vegetation
 
           lwveg(p) = lwveg(p) + lwabs
 
        end do
+       if (mlcanopy_inst%screen_output == 1 .and. isubstep == 12)write(*,*)'];'
+       !call exit(0)
 
        ! Canopy emitted longwave radiation
 

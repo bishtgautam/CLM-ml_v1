@@ -379,6 +379,11 @@ contains
     this%iota_SPA(4: 4) = 500._r8
     this%iota_SPA(5:16) = 750._r8
 
+    this%iota_SPA(7) = 750._r8 ! 01 === WUE
+    this%iota_SPA(7) = 820._r8 ! 02 === Bonan14 
+    !this%iota_SPA(7) = 500._r8 ! 03
+    !this%iota_SPA(7) = 600._r8 ! 04
+
     ! Root hydraulics
 
     this%root_radius_SPA(:) = -999._r8
@@ -399,13 +404,23 @@ contains
     this%g0_BB(:)= -999._r8
     this%g1_BB(:)= -999._r8
 
+    ! DEFULT value
     this%g0_BB( 1:13) = 0.01_r8
     this%g0_BB(14:14) = 0.04_r8
     this%g0_BB(15:16) = 0.01_r8
 
+    ! DEFULT value
     this%g1_BB( 1:13) = 9._r8
     this%g1_BB(14:14) = 4._r8
     this%g1_BB(15:16) = 9._r8
+
+    this%g0_BB(7) = 0.010_r8; this%g1_BB(7) = 9._r8 ! 01
+    this%g0_BB(7) = 0.010_r8; this%g1_BB(7) = 4._r8 ! 02
+    this%g0_BB(7) = 0.040_r8; this%g1_BB(7) = 9._r8 ! 03
+    this%g0_BB(7) = 0.042_r8; this%g1_BB(7) = 9._r8 ! 04
+    this%g0_BB(7) = 0.035_r8; this%g1_BB(7) = 9._r8 ! 05
+    this%g0_BB(7) = 0.030_r8; this%g1_BB(7) = 9._r8 ! 06
+    this%g0_BB(7) = 0.027_r8; this%g1_BB(7) = 9._r8 ! 07
 
     ! Medlyn stomatal conductance parameters
 
@@ -430,6 +445,9 @@ contains
     this%g1_MED(14) = 1.62_r8
     this%g1_MED(15) = 5.79_r8
     this%g1_MED(16) = 5.79_r8
+
+    this%g1_MED( 7) = 3.45_r8
+    this%g1_MED( 7) = 4.00_r8
 
     ! Leaf water potential at which 50% of stomatal conductance is lost
 

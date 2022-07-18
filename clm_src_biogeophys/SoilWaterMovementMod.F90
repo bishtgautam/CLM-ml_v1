@@ -96,7 +96,10 @@ contains
 
        do j = 1, nlayers
           vwc_liq(c,j) = max(h2osoi_liq(c,j),1.0e-6_r8)/(dz(c,j)*denh2o)
+          !write(*,*)j,'h2osoi_liq',h2osoi_liq(c,j),'dz',dz(c,j),'vwc: ',vwc_liq(c,j)
+          !write(*,*)'soil%dz(',j,') = ',dz(c,j)
        end do
+       !write(*,*)''
 
        ! Hydraulic conductivity and soil matric potential
 
@@ -155,6 +158,7 @@ contains
        hk(j) = hksat(c,j) * s**(2._r8 * bsw(c,j) + 3._r8)
        smp(j) = -sucsat(c,j) * s**(-bsw(c,j))
        smp(j) = max(smp(j), -1.e08_r8)
+       !write(*,*)j,'hk_l',hk(j),'hksat',hksat(c,j),'vol',vwc_liq(j),'watsat',watsat(c,j),'bsw',bsw(c,j),'s',s
 
        hk_l(c,j) = hk(j)
        smp_l(c,j) = smp(j)

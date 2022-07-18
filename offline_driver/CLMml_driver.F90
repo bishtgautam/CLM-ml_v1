@@ -68,6 +68,7 @@ contains
     integer  :: clm_start_ymd                  ! CLM history file start date (yyyymmdd format)
     integer  :: clm_start_tod                  ! CLM history file start time-of-day (seconds past 0Z UTC)
     integer  :: nout1, nout2, nout3, nout4     ! Fortran unit number
+    integer  :: nout5, nout6, nout7, nout8     ! Fortran unit number
     integer  :: nin1                           ! Fortran unit number
 
     character(len=256) :: diratm               ! Tower meteorology file directory path
@@ -80,6 +81,8 @@ contains
     character(len=256) :: fout1, fout2         ! Full output file name, including directory path
     character(len=256) :: fout3, fout4         ! Full output file name, including directory path
     character(len=256) :: fin1                 ! Full input file name for profile data, including directory path
+    character(len=256) :: fout5, fout6         ! Full output file name, including directory path
+    character(len=256) :: fout7, fout8         ! Full output file name, including directory path
     !---------------------------------------------------------------------
 
     ! Initialize namelist run control variables
@@ -94,7 +97,7 @@ contains
     itim = 1
     call get_curr_date (yr, mon, day, curr_date_tod)
 
-    write (iulog,*) 'Processing: ',tower_id(tower_num),yr,mon
+    write (iulog,*) '%Processing: ',tower_id(tower_num),yr,mon,tower_num
 
     !---------------------------------------------------------------
     ! Initialize CLM
@@ -142,6 +145,7 @@ contains
        write (ext,'("lp67wspinPTCLM_",a6,"_I_2000_CLM45.clm2.h1.",i4.4,".nc")') tower_id(tower_num),yr
     end if
     fin_clm = dirclm(1:len(trim(dirclm)))//tower_id(tower_num)//"/"//ext(1:len(trim(ext)))
+    write(*,*)'%fin_clm: ',trim(fin_clm)
 
     !---------------------------------------------------------------
     ! Read tower meteorology data once to get acclimation temperature
@@ -218,6 +222,26 @@ contains
     nout4 = getavu()
     open (unit=nout4, file=trim(fout4), action="write")
 
+    write (ext,'(a6,"_",i4.4,"-",i2.2,"_substep_vert_indep.out")') tower_id(tower_num),yr,mon
+    fout5 = dirout(1:len(trim(dirout)))//ext(1:len(trim(ext)))
+    nout5 = getavu()
+    open (unit=nout5, file=trim(fout5), action="write")
+
+    write (ext,'(a6,"_",i4.4,"-",i2.2,"_substep_non_veg_vert_dep.out")') tower_id(tower_num),yr,mon
+    fout6 = dirout(1:len(trim(dirout)))//ext(1:len(trim(ext)))
+    nout6 = getavu()
+    open (unit=nout6, file=trim(fout6), action="write")
+
+    write (ext,'(a6,"_",i4.4,"-",i2.2,"_substep_veg_vert_dep.out")') tower_id(tower_num),yr,mon
+    fout7 = dirout(1:len(trim(dirout)))//ext(1:len(trim(ext)))
+    nout7 = getavu()
+    open (unit=nout7, file=trim(fout7), action="write")
+
+    write (ext,'(a6,"_",i4.4,"-",i2.2,"_forcing.out")') tower_id(tower_num),yr,mon
+    fout8 = dirout(1:len(trim(dirout)))//ext(1:len(trim(ext)))
+    nout8 = getavu()
+    open (unit=nout8, file=trim(fout8), action="write")
+
     !---------------------------------------------------------------
     ! Open ascii profile data input file if desired
     !---------------------------------------------------------------
@@ -233,7 +257,7 @@ contains
     ! Time stepping loop
     !---------------------------------------------------------------
 
-    write (iulog,*) 'Starting time stepping loop .....'
+    write (iulog,*) '%Starting time stepping loop .....'
 
     do itim = 1, ntim
 
@@ -262,7 +286,7 @@ contains
 
        ! Call model to calculate fluxes (as in CLM)
 
-       call lnd_run_mct (bounds, time_indx, fin_clm)
+       call lnd_run_mct (bounds, time_indx, fin_clm, nout5, nout6, nout7, nout8, itim)
 
        ! Write output files
 
@@ -283,12 +307,17 @@ contains
     close (nout4)
     call relavu (nout4)
 
+    close (nout5); call relavu (nout5)
+    close (nout6); call relavu (nout6)
+    close (nout7); call relavu (nout7)
+    close (nout8); call relavu (nout8)
+
     if (turb_type .eq. -1) then
        close (nin1)
        call relavu (nin1)
     end if
 
-    write (iulog,*) 'Successfully finished simulation'
+    write (iulog,*) '% Successfully finished simulation'
 
   end subroutine CLMml_drv
 
@@ -418,7 +447,7 @@ contains
        if (tower_canht(it) /= -999._r8) then
           htop(p) = tower_canht(it)
        end if
-    end do
+   end do
 
     end associate
   end subroutine TowerVeg
@@ -549,6 +578,7 @@ contains
        do j = 1, nlevgrnd
           h2osoi_liq(c,j) = h2osoi_vol(c,j) * dz(c,j) * denh2o
           h2osoi_ice(c,j) = 0._r8
+          write(*,*)'%h2osoi_vol ',j,h2osoi_vol(c,j)
        end do
 
     end do
@@ -651,7 +681,7 @@ contains
        ra = mlcan%rhomol_forcing(p) / mlcan%gac_profile(p,ic)
        lad = mlcan%dpai_profile(p,ic) / mlcan%dz_profile(p,ic)
 
-       write (nout3,'(f10.4,26f10.3)') curr_calday, mlcan%zs_profile(p,ic), zero_value, &
+       write (nout3,'(f10.4,31f10.3)') curr_calday, mlcan%zs_profile(p,ic), zero_value, &
        zero_value, zero_value, zero_value, &
        missing_value, missing_value, &
        missing_value, missing_value, &
@@ -662,7 +692,9 @@ contains
        missing_value, missing_value, &
        missing_value, missing_value, &
        missing_value, missing_value, &
-       mlcan%wind_profile(p,ic), tair, qair
+       missing_value, missing_value, &
+       missing_value, missing_value, &
+       mlcan%wind_profile(p,ic), tair, qair, mlcan%eair_profile(p,ic)
     end do
 200 continue
 
@@ -694,8 +726,9 @@ contains
           ! tair, eair, mlcan%vcmax25_profile(p,ic)
 
           ! Leaf fluxes (per unit leaf area)
-          write (nout3,'(f10.4,26f10.3)') curr_calday, mlcan%zs_profile(p,ic), mlcan%fracsun_profile(p,ic), &
+          write (nout3,'(f10.4,31f10.3)') curr_calday, mlcan%zs_profile(p,ic), mlcan%fracsun_profile(p,ic), &
           lad, lad*mlcan%fracsun_profile(p,ic), lad*(1._r8-mlcan%fracsun_profile(p,ic)), &
+          mlcan%swleaf_leaf(p,ic,isun,:), mlcan%swleaf_leaf(p,ic,isha,:), &
           mlcan%rnleaf_leaf(p,ic,isun), mlcan%rnleaf_leaf(p,ic,isha), &
           mlcan%shleaf_leaf(p,ic,isun), mlcan%shleaf_leaf(p,ic,isha), &
           mlcan%lhleaf_leaf(p,ic,isun), mlcan%lhleaf_leaf(p,ic,isha), &
@@ -705,7 +738,7 @@ contains
           mlcan%lwp_hist_leaf(p,ic,isun), mlcan%lwp_hist_leaf(p,ic,isha), &
           mlcan%tleaf_hist_leaf(p,ic,isun), mlcan%tleaf_hist_leaf(p,ic,isha), &
           mlcan%vcmax25_leaf(p,ic,isun), mlcan%vcmax25_leaf(p,ic,isha), &
-          mlcan%wind_profile(p,ic), tair, qair
+          mlcan%wind_profile(p,ic), tair, qair, mlcan%eair_profile(p,ic)
        else
           ! Non-leaf layer
           ! write (nout3,'(f10.4,14f10.3)') curr_calday, mlcan%zs_profile(p,ic), zero_value, &
@@ -715,7 +748,7 @@ contains
           ! tair, eair, missing_value
 
           ! Non-leaf layer
-          write (nout3,'(f10.4,26f10.3)') curr_calday, mlcan%zs_profile(p,ic), mlcan%fracsun_profile(p,ic), &
+          write (nout3,'(f10.4,31f10.3)') curr_calday, mlcan%zs_profile(p,ic), mlcan%fracsun_profile(p,ic), &
           zero_value, zero_value, zero_value, &
           missing_value, missing_value, &
           missing_value, missing_value, &
@@ -726,7 +759,9 @@ contains
           missing_value, missing_value, &
           missing_value, missing_value, &
           missing_value, missing_value, &
-          mlcan%wind_profile(p,ic), tair, qair
+          missing_value, missing_value, &
+          missing_value, missing_value, &
+          mlcan%wind_profile(p,ic), tair, qair, mlcan%eair_profile(p,ic)
        end if
 
     end do

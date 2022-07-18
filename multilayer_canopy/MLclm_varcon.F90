@@ -61,8 +61,8 @@ module MLclm_varcon
   real(r8) :: rd25_to_vcmax25_c4 = 0.025_r8            ! Ratio of rd to vcmax at 25C (C4) (umol/umol)
   real(r8) :: kp25_to_vcmax25_c4 = 0.02_r8             ! Ratio of kp to vcmax at 25C (C4) (mol/umol)
 
-  real(r8) :: phi_psII = 0.70_r8                       ! C3: quantum yield of PS II
-! real(r8) :: phi_psII = 0.85_r8                       ! C3: quantum yield of PS II
+!  real(r8) :: phi_psII = 0.70_r8                       ! C3: quantum yield of PS II
+ real(r8) :: phi_psII = 0.85_r8                       ! C3: quantum yield of PS II
   real(r8) :: theta_j = 0.90_r8                        ! C3: empirical curvature parameter for electron transport rate
   real(r8) :: qe_c4 = 0.05_r8                          ! C4: quantum yield (mol CO2 / mol photons)
 

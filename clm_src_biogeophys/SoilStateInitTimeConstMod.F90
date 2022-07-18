@@ -130,9 +130,16 @@ contains
           ! Compute root profile for soil water uptake using Jackson1996 method
 
           beta = rootprof_beta(patch%itype(p))
+          !write(*,*)'beta = ',beta
+          do j = 0, nlevsoi
+          !  write(*,*)'zi(',j,') = ',zi(c,j)
+          enddo
+          write(*,*)'root_profile = ['
           do j = 1, nlevsoi
              rootfr(p,j) = ( beta ** (zi(c,j-1)*m_to_cm) - beta ** (zi(c,j)*m_to_cm) )
+             write(*,*)j,rootfr(p,j),zi(c,j-1),zi(c,j),beta
           end do
+          write(*,*)'];'
 
        case default
 
@@ -218,6 +225,7 @@ contains
           ! as in Clapp and Hornberger (1978) Water Resources Research
           ! 14:601-604.
 
+          !write(*,*)'tex = ',tex
           if (tex == 0) then
              watsat(c,j) = 0.489_r8 - 0.00126_r8 * sand
              sucsat(c,j) = 10._r8 * ( 10._r8**(1.88_r8-0.0131_r8*sand) )
@@ -228,7 +236,10 @@ contains
              sucsat(c,j) = -smpsat_tex(tex)
              hksat(c,j) = hksat_tex(tex) / 60._r8    !  mm/min -> mm/s
              bsw(c,j) = bsw_tex(tex)
-          end if
+             !write(*,*)'watsat(c,j) ',watsat(c,j)
+             !write(*,*)'sucsat(c,j) ',sucsat(c,j)
+             !write(*,*)'bsw         ',bsw(c,j)
+             end if
 
           ! Adjust hydraulic properties for organic matter
 
@@ -236,10 +247,16 @@ contains
           om_sucsat = min(10.3_r8 - 0.2_r8   *(z(c,j)/zsapric), 10.1_r8)
           om_hksat  = max(0.28_r8 - 0.2799_r8*(z(c,j)/zsapric), hksat(c,j))
           om_b      = min(2.7_r8  + 9.3_r8   *(z(c,j)/zsapric), 12.0_r8)
+          om_frac = 0._r8
 
           watsat(c,j) = (1._r8 - om_frac) * watsat(c,j) + om_watsat * om_frac
           sucsat(c,j) = (1._r8 - om_frac) * sucsat(c,j) + om_sucsat * om_frac
           bsw(c,j) = (1._r8 - om_frac) * bsw(c,j) + om_frac * om_b
+          !write(*,*)'j ',j
+          !write(*,*)'watsat(c,j) ',watsat(c,j)
+          !write(*,*)'sucsat(c,j) ',sucsat(c,j)
+          !write(*,*)'bsw         ',bsw(c,j)
+          !write(*,*)
 
           ! perc_frac is zero unless perf_frac greater than percolation threshold
 

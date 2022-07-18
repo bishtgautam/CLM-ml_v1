@@ -82,6 +82,7 @@ contains
 
     lambda = LatVap(tref(p))
 
+    !write(*,*)'alpha,beta,gamma'
     if (dpai(p,ic) > 0._r8) then
 
        ! Saturation vapor pressure (Pa -> mol/mol)
@@ -113,11 +114,35 @@ contains
        ! Sensible heat flux
 
        shleaf(p,ic,il) = 2._r8 * cpair(p) * (tleaf(p,ic,il) - tair(p,ic)) * gbh(p,ic,il)
+       !write(*,*)'shleaf(p,ic,il)',ic,il,shleaf(p,ic,il)
 
        ! Transpiration and evaporation water fluxes: mol H2O/m2/s
 
        num1 = qsat + dqsat * (tleaf(p,ic,il) - tleaf_bef(p,ic,il)) - eair(p,ic) / pref(p)
+       !num1 = qsat - eair(p,ic)/pref(p)
        trleaf(p,ic,il) = gleaf * fdry(p,ic) * num1
+       !write(*,*)qsat, dqsat, tleaf(p,ic,il), tleaf_bef(p,ic,il), eair(p,ic) , pref(p)
+       !if (ic == 6 .and. il == 1)write(*,*)'trleaf:'
+       if (ic == -6 ) then
+        write(*,*)''
+        write(*,*)'il',il
+        write(*,*)'tl',tleaf(p,ic,il),'tl_bef',tleaf_bef(p,ic,il)
+        write(*,*)'gs',gs(p,ic,il),'gleaf',gleaf,'gbv',gbv(p,ic,il)
+        write(*,*)'num1',num1,'qsat',qsat,'qair',eair(p,ic)/pref(p)
+        write(*,*)'fdry',fdry(p,ic)
+        write(*,*)'tr',trleaf(p,ic,il)
+        !call exit(0)
+       endif
+       !call exit(0)
+       if (ic == -6 ) then
+        write(*,*)'fdry',fdry(p,ic)
+        write(*,*)'gleaf',gleaf
+       write(*,*)'num1 = ',num1
+       write(*,*)'fwet = ',fdry(p,ic)
+       write(*,*)'gbv  = ',gbv(p,ic,il)
+       !write(*,*)'stopping in LeafFluxes'
+       !call exit(0)
+       endif
        evleaf(p,ic,il) = gbv(p,ic,il) * fwet(p,ic) * num1
 
        ! Latent heat flux

@@ -157,6 +157,8 @@ contains
              fdry(p,ic) = 0._r8
 
           end if
+          fdry(p,ic) = 0.82183907923917021_r8
+          fwet(p,ic) = 0._r8
 
        end do
 

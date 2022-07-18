@@ -14,14 +14,13 @@ module MLclm_varctl
   ! Model run options
 
   character(len=6) :: clm_phys = 'CLM4_5' ! Snow/soil layers differ for CLM4.5 and CLM5. Options: 'CLM4_5' or 'CLM5_0'
-  integer  :: gs_type = 2                 ! Stomatal conductance: Medlyn (0), Ball-Berry (1), or WUE optimization (2)
-  integer  :: gspot_type = 1              ! Stomatal conductance: use potential conductance (0) or water-stressed conductance (1)
+  integer  :: gspot_type = 0              ! Stomatal conductance: use potential conductance (0) or water-stressed conductance (1)
   integer  :: colim_type = 1              ! Photosynthesis: minimum rate (0) or co-limited rate (1)
-  integer  :: acclim_type = 1             ! Photosynthesis: temperature acclimation off (0) or on (1)
+  integer  :: acclim_type = 0             ! Photosynthesis: temperature acclimation off (0) or on (1)
   real(r8) :: kn_val = -999._r8           ! Canopy nitrogen profile: for a user-specified Kn, set kn_val to desired value > 0
   integer  :: turb_type = 1               ! Turbulence parameterization: dataset (-1) or well-mixed assumption (0) or H&F roughness sublayer (1)
   integer  :: gb_type = 3                 ! Boundary layer cond.: CLM5 (0) or laminar only (1) or also turbulent (2) and free convection (3)
-  integer  :: light_type = 2              ! Solar radiative transfer: Norman (1) or two-stream approximation (2)
+  integer  :: light_type = 1              ! Solar radiative transfer: Norman (1) or two-stream approximation (2)
   integer  :: longwave_type = 1           ! Longwave radiative transfer: Norman (1)
   integer  :: fpi_type = 2                ! Fraction of precipitation intercepted: CLM4.5 (1) or CLM5 (2)
   integer  :: root_type = 2               ! Root profile: CLM4.5 (1) uses Zeng2001 or CLM5 (2) uses Jackson1996
@@ -48,5 +47,13 @@ module MLclm_varctl
   ! Model sub-timestep (s) is 5 minutes
 
   real(r8), save :: dtime_substep = 5._r8 * 60._r8
+
+  integer  :: gs_type = 2                 ! Stomatal conductance: Medlyn (0), Ball-Berry (1), or WUE optimization (2)
+
+  integer  :: use_bonan14_wue = 0       ! Use Bonan14 co-optimization scheme
+  real(r8) :: minlwp_SPA      = -2.2_r8 !
+
+  integer  :: use_manzoni11 = 1         ! Use Manzoni11 WUE in which iota is a function of LWP
+  real(r8) :: b_manzoi11    = 0.001_r8   !
 
 end module MLclm_varctl

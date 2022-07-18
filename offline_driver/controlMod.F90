@@ -65,9 +65,9 @@ contains
 
     ! Read namelist file
 
-    write(iulog,*) 'Attempting to read namelist file .....'
+    write(iulog,*) '%Attempting to read namelist file .....'
     read (5, clmML_inparm)
-    write(iulog,*) 'Successfully read namelist file'
+    write(iulog,*) '%Successfully read namelist file'
 
     ! Set calendar variables
 

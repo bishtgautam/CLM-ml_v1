@@ -93,6 +93,16 @@ contains
     num4 = rnsoi(p) - num2 * rhg(p) * (qsat - dqsat * tg_bef(p)) + num3 * soil_t(p)
     den = num1 + num2 * dqsat * rhg(p) + num3
     tg(p) = (num1 * tair(p,1) + num2 * (eair(p,1)/pref(p)) + num4) / den
+    !write(*,*)'tg: ',tg(p)
+    !write(*,*)' ', num1/den, ' ',num2/den, ' ',num4/den
+    !write(*,*)' ta',tair(p,1),'qa',eair(p,1)/pref(p)
+    !write(*,*)'rhs ',num4/den
+    !write(*,*)'  num',num4,'den',den
+    !write(*,*)'  tg_bef',tg_bef(p),'soil_t',soil_t(p)
+    !write(*,*)'dig*',num1/den
+    !write(*,*)'off ',num2 * (1._r8/pref(p))/den
+    !write(*,*)'off ',num2 /den
+    !write(*,*)'e/P ',(eair(p,1)/pref(p))
 
     ! Sensible heat flux
 

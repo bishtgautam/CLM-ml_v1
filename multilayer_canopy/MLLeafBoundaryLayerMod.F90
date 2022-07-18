@@ -19,7 +19,7 @@ module MLLeafBoundaryLayerMod
 contains
 
   !-----------------------------------------------------------------------
-  subroutine LeafBoundaryLayer (num_filter, filter, il, mlcanopy_inst)
+  subroutine LeafBoundaryLayer (num_filter, filter, il, mlcanopy_inst, istep, isubstep)
     !
     ! !DESCRIPTION:
     ! Leaf boundary layer conductance
@@ -38,6 +38,7 @@ contains
     integer, intent(in) :: filter(:)         ! Patch filter
     integer, intent(in) :: il                ! Sunlit (1) or shaded (2) leaf index
     type(mlcanopy_type), intent(inout) :: mlcanopy_inst
+    integer :: istep, isubstep
     !
     ! !LOCAL VARIABLES:
     integer  :: fp                           ! Filter index
@@ -97,9 +98,10 @@ contains
 
        do ic = 1, ncan(p)
 
-          if (dpai(p,ic) > 0._r8) then
+         if (dpai(p,ic) > 0._r8) then
 
-             select case (gb_type)
+            !write(*,*)'tair(p,ic) ',tair(p,ic)
+            select case (gb_type)
              case (0)
 
                 ! Use CLM5 simplification: units are m/s
@@ -141,6 +143,7 @@ contains
                 nu_free  = 0.54_r8 *  pr**0.25_r8 * gr**0.25_r8
                 shv_free = 0.54_r8 * scv**0.25_r8 * gr**0.25_r8
                 shc_free = 0.54_r8 * scc**0.25_r8 * gr**0.25_r8
+                !write(*,*)ic, nu_free, shv_free, shc_free
 
                 ! Choose flow regimes to use
 
@@ -188,6 +191,15 @@ contains
              gbh(p,ic,il) = gbh(p,ic,il) * rhomol(p)
              gbv(p,ic,il) = gbv(p,ic,il) * rhomol(p)
              gbc(p,ic,il) = gbc(p,ic,il) * rhomol(p)
+             if (ic == -6) then
+               write(*,*)'tair(p,ic) ',tair(p,ic), 'tleaf:', tleaf(p,ic,il)
+               write(*,*)'Re',re,'Pr',pr,'Scv',scv,'gr',gr
+               write(*,*)'wind',wind(p,ic),'dleaf',dleaf(patch%itype(p)),'vis:',visc
+               write(*,*)'factor ',fac
+               write(*,*)ic,il,gbh(p,ic,il),gbv(p,ic,il),gbc(p,ic,il)
+               write(*,*)''
+             endif
+             if (mlcanopy_inst%screen_output == 1 .and. isubstep == 12)write(*,*)ic, il, gbh(p,ic,il),gbv(p,ic,il),gbc(p,ic,il)!gbh(p,ic,il),dh,nu,dleaf(patch%itype(p)),rhomol(p),nu_free,nu_lam,nu_free, wind(p,ic)
 
           else
 

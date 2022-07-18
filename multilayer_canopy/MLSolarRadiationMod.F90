@@ -27,14 +27,14 @@ module MLSolarRadiationMod
 contains
 
   !-----------------------------------------------------------------------
-  subroutine SolarRadiation (bounds, num_filter, filter, mlcanopy_inst)
+  subroutine SolarRadiation (bounds, num_filter, filter, mlcanopy_inst, itim)
     !
     ! !DESCRIPTION:
     ! Solar radiation transfer through canopy
     !
     ! !USES:
     use clm_varcon, only : pi => rpi
-    use clm_varpar, only : numrad, ivis
+    use clm_varpar, only : numrad, ivis, inir
     use MLclm_varcon, only : chil_max, chil_min, kb_max, J_to_umol
     use MLclm_varctl, only : light_type
     use MLclm_varpar, only : nlevmlcan, isun, isha
@@ -45,6 +45,8 @@ contains
     integer, intent(in) :: num_filter                    ! Number of patches in filter
     integer, intent(in) :: filter(:)                     ! Patch filter
     type(mlcanopy_type), intent(inout) :: mlcanopy_inst
+    integer :: itim
+    character(len=20) :: stepstring, substepstring
     !
     ! !LOCAL VARIABLES:
     integer  :: fp                                       ! Filter index
@@ -70,6 +72,7 @@ contains
     real(r8) :: avmu(bounds%begp:bounds%endp,1:nlevmlcan)            ! Average inverse diffuse optical depth per unit leaf area
     real(r8) :: betad(bounds%begp:bounds%endp,1:nlevmlcan,1:numrad)  ! Upscatter parameter for diffuse radiation
     real(r8) :: betab(bounds%begp:bounds%endp,1:nlevmlcan,1:numrad)  ! Upscatter parameter for direct beam radiation
+    real(r8) :: sumpai
     !---------------------------------------------------------------------
 
     associate ( &
@@ -105,6 +108,8 @@ contains
 
     ! Calculate canopy layer optical properties
 
+    !write(*,*)''
+    !write(*,*)'fracsun'
     do fp = 1, num_filter
        p = filter(fp)
 
@@ -122,6 +127,7 @@ contains
        betab(p,1:ncan(p),1:numrad) = 0._r8
        betad(p,1:ncan(p),1:numrad) = 0._r8
 
+      !write(*,*)'rho,tau'
        do ic = ntop(p), nbot(p) , -1
 
           ! Weight reflectance and transmittance by lai and sai and calculate
@@ -132,6 +138,7 @@ contains
              rho(p,ic,ib) = max(rhol(patch%itype(p),ib)*wl + rhos(patch%itype(p),ib)*ws, 1.e-06_r8)
              tau(p,ic,ib) = max(taul(patch%itype(p),ib)*wl + taus(patch%itype(p),ib)*ws, 1.e-06_r8)
              omega(p,ic,ib) = rho(p,ic,ib) + tau(p,ic,ib)
+             !if (ib == 2)write(*,*)ic,ib,rho(p,ic,ib),tau(p,ic,ib), rhol(patch%itype(p),ib), rhos(patch%itype(p),ib),taul(patch%itype(p),ib), taus(patch%itype(p),ib), wl, ws
           end do
 
           ! Direct beam extinction coefficient
@@ -144,7 +151,13 @@ contains
 
           gdir = phi1 + phi2 * cos(solar_zen(p))
           kb(p,ic) = gdir / cos(solar_zen(p))
+          if (ic == ntop(p)) then
+!           !write(*,*)'kb before: ',kb(p,ic),xl(patch%itype(p)),chil, solar_zen(p),kb_max,phi1,phi2,clump_fac(patch%itype(p))
+          endif
           kb(p,ic) = min(kb(p,ic), kb_max)
+          !write(*,*)'kb: ',ic,kb(p,ic)
+!         !write(*,*)''
+!          call exit(0)
 
           ! Direct beam transmittance (tb) through a single layer
 
@@ -163,17 +176,23 @@ contains
           td(p,ic) = td(p,ic) * 2._r8 * (10._r8 * pi / 180._r8)
 
           ! Transmittance (tbi) of unscattered direct beam onto layer i
-
+          
           if (ic == ntop(p)) then
              tbi(p,ntop(p)) = 1._r8
-          else
+             sumpai = 0.5_r8 * dpai(p,ic)
+             !write(*,*)'ntop(p)   ',ntop(p)
+             !write(*,*)'dpai(p,ic)',dpai(p,ic)
+            else
              tbi(p,ic) = tbi(p,ic+1) * exp(-kb(p,ic+1) * dpai(p,ic+1) * clump_fac(patch%itype(p)))
+             sumpai = sumpai + 0.5_r8 * (dpai(p,ic+1) + dpai(p,ic))
           end if
 
           ! Sunlit fraction of layer. Make sure fracsun > 0 and < 1.
 
           fracsun(p,ic) = tbi(p,ic) / (kb(p,ic) * dpai(p,ic)) &
                         * (1._r8 - exp(-kb(p,ic) * clump_fac(patch%itype(p)) * dpai(p,ic)))
+         fracsun(p,ic) = exp(-kb(p,ic) * clump_fac(patch%itype(p)) * sumpai)
+         !write(*,*)ic,fracsun(p,ic),kb(p,ic),clump_fac(patch%itype(p)),sumpai, dpai(p,ic)
 
           if (fracsun(p,ic) <= 0._r8) then
              call endrun (msg=' ERROR: SolarRadiation: fracsun is too small')
@@ -207,11 +226,14 @@ contains
              betab(p,ic,ib) = (1._r8 + avmu(p,ic)*kb(p,ic)) / (omega(p,ic,ib)*avmu(p,ic)*kb(p,ic)) * asu
           end do
 
+          !write(*,*)ic,dpai(p,ic),tb(p,ic),td(p,ic),tbi(p,ic),fracsun(p,ic)
        end do
 
        ! Direct beam transmittance onto ground
 
        tbi(p,0) = tbi(p,nbot(p)) * exp(-kb(p,nbot(p)) * dpai(p,nbot(p)) * clump_fac(patch%itype(p)))
+      !write(*,*)'tbi(0) = ',tbi(p,0),'tbi_nbot = ',tbi(p,nbot(p)),'fac = ',exp(-kb(p,nbot(p)) * dpai(p,nbot(p)) * clump_fac(patch%itype(p)))
+      !write(*,*)'dpai   = ',dpai(p,nbot(p))
 
     end do
 
@@ -219,28 +241,35 @@ contains
 
     select case (light_type)
     case (1)
-       call Norman (bounds, num_filter, filter, rho, tau, omega, mlcanopy_inst)
+       !write(*,*)'Norman solar rad'
+       call Norman (bounds, num_filter, filter, rho, tau, omega, mlcanopy_inst, itim)
     case (2)
-       call TwoStream (bounds, num_filter, filter, omega, avmu, betad, betab, mlcanopy_inst)
+      !write(*,*)'Two solar rad'
+      call TwoStream (bounds, num_filter, filter, omega, avmu, betad, betab, mlcanopy_inst)
     case default
        call endrun (msg=' ERROR: SolarRadiation: light_type not valid')
     end select
 
     ! APAR per unit sunlit and shaded leaf area (W/m2 -> umol/m2/s)
 
+    write(stepstring,*)itim
+    write(*,*)'clm.iabs{' // trim(adjustl(stepstring)) // '} = ['
     do fp = 1, num_filter
        p = filter(fp)
        do ic = 1, ncan(p)
           apar(p,ic,isun) = swleaf(p,ic,isun,ivis) * J_to_umol
           apar(p,ic,isha) = swleaf(p,ic,isha,ivis) * J_to_umol
+          write(*,*)ic,swleaf(p,ic,isun,ivis),swleaf(p,ic,isha,ivis),swleaf(p,ic,isun,inir),swleaf(p,ic,isha,inir)
        end do
     end do
+    write(*,*)'];'
+    !write(*,*)'swsoi ',swsoi
 
     end associate
   end subroutine SolarRadiation
 
   !-----------------------------------------------------------------------
-  subroutine Norman (bounds, num_filter, filter, rho, tau, omega, mlcanopy_inst)
+  subroutine Norman (bounds, num_filter, filter, rho, tau, omega, mlcanopy_inst, itim)
     !
     ! !DESCRIPTION:
     ! Compute solar radiation transfer through canopy using Norman (1979)
@@ -259,6 +288,7 @@ contains
     real(r8), intent(in) :: tau(bounds%begp:bounds%endp,1:nlevmlcan,1:numrad)    ! Leaf/stem transmittance
     real(r8), intent(in) :: omega(bounds%begp:bounds%endp,1:nlevmlcan,1:numrad)  ! Leaf/stem scattering coefficient
     type(mlcanopy_type), intent(inout) :: mlcanopy_inst
+    integer :: itim
     !
     ! !LOCAL VARIABLES:
     integer  :: fp                                               ! Filter index
@@ -311,6 +341,8 @@ contains
     swleaf      => mlcanopy_inst%swleaf_leaf       &  ! Leaf absorbed solar radiation (W/m2 leaf)
     )
 
+!   !write(*,*)''
+!   !write(*,*)'Norman:'
     do ib = 1, numrad
        do fp = 1, num_filter
           p = filter(fp)
@@ -332,15 +364,19 @@ contains
           ! soil. These equations are referenced by "m". The first equation
           ! is the upward flux and the second equation is the downward flux.
 
+         !write(*,*)'BC: ',ib,'swskyb',swskyb(p,ib),'swskyd',swskyd(p,ib),'tb',tbi(p,0),'albsoib: ',albsoib(p,ib),'albsoid',albsoib(p,ib)
           m = 0
 
           ! Soil: upward flux
 
+         !write(*,*)'m,a,b,c,d'
           m = m + 1 
           atri(m) = 0._r8 
           btri(m) = 1._r8 
           ctri(m) = -albsoid(p,ib) 
           dtri(m) = swskyb(p,ib) * tbi(p,0) * albsoib(p,ib) 
+         !write(*,*)m,atri(m),btri(m),ctri(m),dtri(m)
+!         !write(*,*)dtri(m), swskyb(p,ib), tbi(p,0), albsoib(p,ib)
 
           ! Soil: downward flux
 
@@ -354,6 +390,7 @@ contains
           btri(m) = 1._r8 
           ctri(m) = -bic 
           dtri(m) = swskyb(p,ib) * tbi(p,nbot(p)) * (1._r8 - tb(p,nbot(p))) * (tau(p,nbot(p),ib) - rho(p,nbot(p),ib) * bic)
+         !write(*,*)m,atri(m),btri(m),ctri(m),dtri(m)
 
           ! Leaf layers, excluding top layer
 
@@ -371,6 +408,10 @@ contains
              btri(m) = 1._r8
              ctri(m) = -fic
              dtri(m) = swskyb(p,ib) * tbi(p,ic) * (1._r8 - tb(p,ic)) * (rho(p,ic,ib) - tau(p,ic,ib) * eic)
+            !write(*,*)m,atri(m),btri(m),ctri(m),dtri(m)!,swskyb(p,ib) * tbi(p,ic) * (1._r8 - tb(p,ic)), rho(p,ic,ib), tau(p,ic,ib), eic
+             !write(*,*)m,dtri(m),swskyb(p,ib) * tbi(p,ic) * (1._r8 - tb(p,ic)), rho(p,ic,ib), tau(p,ic,ib), eic
+             !write(*,*)'rho ',rho(p,ic,ib),'tau ',tau(p,ic,ib),'e',eic
+             !call exit(0)
 
              ! Downward flux
 
@@ -384,6 +425,11 @@ contains
              btri(m) = 1._r8
              ctri(m) = -bic
              dtri(m) = swskyb(p,ib) * tbi(p,ic+1) * (1._r8 - tb(p,ic+1)) * (tau(p,ic+1,ib) - rho(p,ic+1,ib) * bic)
+            !write(*,*)m,atri(m),btri(m),ctri(m),dtri(m)
+             if (m == 36 .and. ib == 2) then
+              !write(*,*)'fic: ',refld,trand,aic,'rho',rho(p,ic+1,ib),'tau',td(p,ic+1)
+               !call exit(0)
+             endif
 
           end do
 
@@ -400,6 +446,7 @@ contains
           btri(m) = 1._r8
           ctri(m) = -fic
           dtri(m) = swskyb(p,ib) * tbi(p,ic) * (1._r8 - tb(p,ic)) * (rho(p,ic,ib) - tau(p,ic,ib) * eic)
+         !write(*,*)m,atri(m),btri(m),ctri(m),dtri(m)!,swskyb(p,ib), tbi(p,ic), tb(p,ic), rho(p,ic,ib), tau(p,ic,ib), eic, trand, refld, td(p,ic)
 
           ! Top canopy layer: downward flux
 
@@ -408,6 +455,8 @@ contains
           btri(m) = 1._r8
           ctri(m) = 0._r8
           dtri(m) = swskyd(p,ib)
+         !write(*,*)m,atri(m),btri(m),ctri(m),dtri(m)
+!          call exit(0)
 
           ! Solve tridiagonal system of equations for upward and downward fluxes
 
@@ -421,26 +470,33 @@ contains
           m = 0
 
           ! Soil fluxes
+         !write(*,*)'U:'
 
           m = m + 1
           swup(p,0,ib) = utri(m)
+         !write(*,*)m,utri(m)
           m = m + 1
           swdn(p,0,ib) = utri(m)
+         !write(*,*)m,utri(m)
 
           ! Leaf layer fluxes
 
           do ic = nbot(p), ntop(p)
              m = m + 1
              swup(p,ic,ib) = utri(m)
+            !write(*,*)m,utri(m)
              m = m + 1
              swdn(p,ic,ib) = utri(m)
-          end do
+            !write(*,*)m,utri(m)
+            end do
 
        end do             ! end patch loop
     end do                ! end waveband loop
+   !write(*,*)''
 
     ! Compute fluxes
 
+   !write(*,*)'Compute fluxes'
     do ib = 1, numrad
        do fp = 1, num_filter
           p = filter(fp)
@@ -451,6 +507,12 @@ contains
           swabsb = swbeam * (1._r8 - albsoib(p,ib))
           swabsd = swdn(p,0,ib) * (1._r8 - albsoid(p,ib))
           swsoi(p,ib) = swabsb + swabsd
+          !if (ib == 1) 
+          !write(*,*)''
+          !write(*,*)'Shortwave ',ib,swabsd, swabsb
+          !write(*,*)'Idn       ',swdn(p,0,ib)
+!          write(*,*)'  albedo ',albsoib(p,ib), albsoid(p,ib),'factor ',(1._r8 - albsoib(p,ib)),tbi(p,0),swskyb(p,ib)
+          !write(*,*)'  albsoib',albsoib(p,ib)
 
           ! Leaf layer fluxes
 
@@ -458,6 +520,7 @@ contains
           swvegsun(p,ib) = 0._r8
           swvegsha(p,ib) = 0._r8
 
+!         !write(*,*)'swleaf:'
           do ic = nbot(p), ntop(p)
 
              ! Downward direct beam incident on layer and absorbed direct
@@ -485,6 +548,8 @@ contains
 
              swleaf(p,ic,isun,ib) = swsun / (fracsun(p,ic) * dpai(p,ic))
              swleaf(p,ic,isha,ib) = swsha / ((1._r8 - fracsun(p,ic)) * dpai(p,ic))
+             !if (ib == 1) 
+            !write(*,*)swleaf(p,ic,isun,ib),swleaf(p,ic,isha,ib), swsun, swsha
 
              ! Sum solar radiation absorbed by vegetation and sunlit/shaded leaves
 
@@ -683,7 +748,7 @@ contains
              ! sun = sun + (-n1b * u * (1._r8 - s2*s1) / (kb(p,ic) + h) + n2b * v * (1._r8 - s2/s1) / (kb(p,ic) - h)) * h * clump_fac(patch%itype(p)) * tbi(p,ic)
              ! sun = sun - ( n1b * v * (1._r8 - s2*s1) / (kb(p,ic) + h) - n2b * u * (1._r8 - s2/s1) / (kb(p,ic) - h)) * h * clump_fac(patch%itype(p)) * tbi(p,ic)
              ! if (abs(iabsb_sun(p,ic,ib)-sun) > 1.e-10_r8) then
-             !    write (6,*) iabsb_sun(p,ic,ib), sun
+             !   !write (6,*) iabsb_sun(p,ic,ib), sun
              !    stop
              ! end if
 
@@ -714,7 +779,7 @@ contains
              !       -n1d * v * (1._r8 - s2*s1) / (kb(p,ic) + h) + n2d * u * (1._r8 - s2/s1) / (kb(p,ic) - h)
              ! sun = sun * h * clump_fac(patch%itype(p)) * tbi(p,ic)
              ! if (abs(iabsd_sun(p,ic,ib)-sun) > 1.e-10_r8) then
-             !    write (6,*) iabsd_sun(p,ic,ib), sun
+             !   !write (6,*) iabsd_sun(p,ic,ib), sun
              !    stop
              ! end if
 

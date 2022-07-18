@@ -118,6 +118,7 @@ module MLCanopyNitrogenProfileMod
        else
           call endrun (msg='ERROR: CanopyNitrogenProfile: incorrect Kn')
        end if
+       !kn = 0._r8
 
        ! Layer values - nscale is integrated over the layer to get the average
        ! value for the sunlit and shaded portions of the layer
@@ -145,6 +146,7 @@ module MLCanopyNitrogenProfileMod
              fn_sha = fn - fn_sun
              nscale_sun = fn_sun / (fracsun(p,ic) * dpai(p,ic))
              nscale_sha = fn_sha / ((1._r8 - fracsun(p,ic)) * dpai(p,ic))
+             nscale_sun = 1; nscale_sha = 1;
 
              ! Leaf variables
 
@@ -173,7 +175,7 @@ module MLCanopyNitrogenProfileMod
        numerical = sum(vcmax25_profile(p,1:ncan(p)) * dpai(p,1:ncan(p)))
        analytical = vcmax25top * (1._r8 - exp(-kn*(lai(p) + sai(p)))) / kn
        if (abs(numerical-analytical) > 1.e-06_r8) then
-          call endrun (msg='ERROR: CanopyNitrogenProfile: canopy integration error')
+       !   call endrun (msg='ERROR: CanopyNitrogenProfile: canopy integration error')
        end if
 
     end do

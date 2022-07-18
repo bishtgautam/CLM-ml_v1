@@ -35,7 +35,7 @@ module MLCanopyTurbulenceMod
 contains
 
   !-----------------------------------------------------------------------
-  subroutine CanopyTurbulence (niter, num_filter, filter, mlcanopy_inst)
+  subroutine CanopyTurbulence (niter, num_filter, filter, mlcanopy_inst,istep, isubstep)
     !
     ! !DESCRIPTION:
     ! Canopy turbulence, scalar source/sink fluxes for leaves and soil, and
@@ -51,6 +51,7 @@ contains
     integer, intent(in) :: num_filter   ! Number of patches in filter
     integer, intent(in) :: filter(:)    ! Patch filter
     type(mlcanopy_type), intent(inout) :: mlcanopy_inst
+    integer :: istep, isubstep
     !
     ! !LOCAL VARIABLES:
     !---------------------------------------------------------------------
@@ -66,7 +67,7 @@ contains
 
        ! Use Harman & Finnigan (2008) roughness sublayer theory
 
-       call HF2008 (niter, num_filter, filter, mlcanopy_inst)
+       call HF2008 (niter, num_filter, filter, mlcanopy_inst, istep, isubstep)
 
     case default
 
@@ -236,7 +237,7 @@ contains
   end subroutine WellMixed
 
   !-----------------------------------------------------------------------
-  subroutine HF2008 (niter, num_filter, filter, mlcanopy_inst)
+  subroutine HF2008 (niter, num_filter, filter, mlcanopy_inst,istep, isubstep)
     !
     ! !DESCRIPTION:
     ! Canopy turbulence, aerodynamic conductances, wind/temperature/water vapor
@@ -267,6 +268,8 @@ contains
     real(r8) :: lm                      ! Length scale for momentum (m)
     real(r8) :: lm_over_beta            ! lm / beta
     real(r8) :: eta                     ! Used to limit value for lm / beta
+    integer :: istep, isubstep
+    character(len=20) :: stepstring, substepstring
     !---------------------------------------------------------------------
 
     associate ( &
@@ -373,6 +376,7 @@ contains
        ! Canopy density length scale
 
        Lc(p) = ztop(p) / (cd * (lai(p) + sai(p)))
+      !write(*,*)'Lc',Lc
 
        ! These are not used, but are needed to pass into the hybrid root solver
 
@@ -384,9 +388,13 @@ contains
 
        obu0 = 100._r8          ! Initial estimate for Obukhov length (m)
        obu1 = -100._r8         ! Initial estimate for Obukhov length (m)
-       tol = 0.1_r8            ! Accuracy tolerance for Obukhov length (m)
+       tol = 0.01_r8            ! Accuracy tolerance for Obukhov length (m)
 
+      !!write(*,*)' call hybrid solution for ObuFunc: gs(1,6,:) ',gs(1,6,:)
+       !write(*,*)'ObuFunc taf: ',taf(p),qaf(p)
        dummy = hybrid ('HF2008', p, ic, il, mlcanopy_inst, ObuFunc, obu0, obu1, tol)
+       write(*,*)'%   obu: ',obu(p)
+       !call exit(0)
 
        ! Check to see if Obukhov length is changing signs between iterations.
        ! If too many changes in sign, set it to a near-neutral value.
@@ -410,16 +418,20 @@ contains
 
        ! Wind speed profile
 
+      !!write(*,*)'gs(1,6,:) ',gs(1,6,:)
        call WindProfile (p, lm_over_beta, mlcanopy_inst)
 
        ! Aerodynamic conductances
 
+      !!write(*,*)'gs(1,6,:) ',gs(1,6,:)
        call AerodynamicConductance (p, lm_over_beta, mlcanopy_inst)
 
        ! Scalar source/sink fluxes for leaves/soil and concentration profiles.
        ! This uses an implicit solution for temperature and vapor pressure.
     
-        call FluxProfileSolution (p, mlcanopy_inst)
+      !!write(*,*)'gs(1,6,:) ',gs(1,6,:)
+       call FluxProfileSolution (p, mlcanopy_inst, istep, isubstep)
+       !call exit(0)
 
        ! No profile for CO2
 
@@ -431,6 +443,8 @@ contains
 
        taf(p) = tair(p,ntop(p))
        qaf(p) = mmh2o/mmdry * eair(p,ntop(p)) / (pref(p) - (1._r8-mmh2o/mmdry) * eair(p,ntop(p)))
+       !write(*,*)'taf(p)',taf(p),'qaf: ',qaf(p)
+       !write(*,*)'eair: ',eair(p,ntop(p)), 'factor ',mmh2o/mmdry / (pref(p) - (1._r8-mmh2o/mmdry) * eair(p,ntop(p)))
 
     end do
 
@@ -500,6 +514,7 @@ contains
     ! Use this current value of Obukhov length
 
     obu_cur = obu_val
+    !write(*,*)'In ObuFunc'
 
     ! Prevent near-zero value of Obukhov length
 
@@ -507,19 +522,24 @@ contains
 
     ! Determine neutral value of beta
 
-    c1 = (vkc / log((ztop(p) + z0mg)/z0mg))**2
+    c1 = (vkc / log((ztop(p) + z0mg)/z0mg))**2._r8
     beta_neutral = min(sqrt(c1 + cr*(lai(p)+sai(p))), beta_neutral_max)
+    !write(*,*)'  beta_n',beta_neutral
 
     ! Calculate beta = u* / u(h) for current Obukhov length
 
+   !!write(*,*)'LcL',Lc(p),obu_cur
     call GetBeta (beta_neutral, Lc(p)/obu_cur, beta(p))
+    !write(*,*)'  beta  ',beta
 
     ! Displacement height, and then adjust for canopy sparseness
 
-    h_minus_d = beta(p)**2 * Lc(p)
-    h_minus_d = h_minus_d * (1._r8 - exp(-0.25_r8*(lai(p)+sai(p))/beta(p)**2))
+    h_minus_d = beta(p)**2._r8 * Lc(p)
+    h_minus_d = h_minus_d * (1._r8 - exp(-0.25_r8*(lai(p)+sai(p))/beta(p)**2._r8))
     h_minus_d = min(ztop(p), h_minus_d)
     zdisp(p) = ztop(p) - h_minus_d
+    !write(*,*)'disp   :',zdisp(p),'dp',h_minus_d,'pai',(lai(p)+sai(p)),'Lc',Lc(p)
+    !write(*,*)'  disp   ',zdisp
 
     if ((zref(p) - zdisp(p)) < 0._r8) then
        call endrun (msg=' ERROR: ObuFunc: zdisp height > zref')
@@ -529,6 +549,7 @@ contains
     ! top for current Obukhov length. Only need Pr because Sc = Pr.
 
     call GetPrSc (beta_neutral, beta_neutral_max, Lc(p)/obu_cur, PrSc(p))
+    !write(*,*)'  PrSc  ',PrSc(p)
 
     ! Calculate the stability functions psi for momentum and scalars. The
     ! returned function values (psim, psic) are the Monin-Obukhov psi functions
@@ -545,7 +566,10 @@ contains
     end if
     obu_cur = (zref(p) - zdisp(p)) / zeta
 
+    !write(*,*)'zref ',zref(p),'ztop ',ztop(p),'zdisp ',zdisp(p),'obu_cur',obu_cur,'beta',beta(p)
     call GetPsiRSL (zref(p), ztop(p), zdisp(p), obu_cur, beta(p), PrSc(p), psim, psic)
+   !!write(*,*)'psim ',psim,'psic',psic
+    !write(*,*)'psim   : ',psim,psic
 
     ! Friction velocity
 
@@ -559,7 +583,17 @@ contains
     ! Water vapor scale - use units of specific humidity (kg/kg)
 
     qstar = (qref(p) - qaf(p)) * vkc / (zlog + psic)
-
+    !write(*,*)' +++++++'
+    !write(*,*)'  tv*   ',(thref(p) - taf(p)) * vkc / (zlog + psic),(thref(p) - taf(p)), vkc, (zlog + psic)
+    !write(*,*)'  q*    ',(qref(p) - qaf(p)) * vkc / (zlog + psic),(qref(p) - qaf(p)), vkc, (zlog + psic),qref(p), qaf(p)
+    !write(*,*)' +++++++'
+    !write(*,*)'  psim  ',psim
+    !write(*,*)'  psic  ',psic
+    !write(*,*)'  u*    ',ustar(p)
+    !write(*,*)'  uref  ',uref(p)
+    !write(*,*)'  taf   ',taf(p)
+    !write(*,*)'  qaf   ',qaf(p)
+ 
     ! Aerodynamic conductance to canopy height
 
     gac_to_hc(p) = rhomol(p) * vkc * ustar(p) / (zlog + psic)
@@ -571,11 +605,30 @@ contains
     ! Calculate new Obukhov length (m)
 
     tvstar = tstar + 0.61_r8 * thref(p) * qstar
-    obu_new = ustar(p)**2 * thvref(p) / (vkc * grav * tvstar)
+    obu_new = ustar(p)**2._r8 * thvref(p) / (vkc * grav * tvstar)
+    !write(*,*)'  ga    ',gac_to_hc
+    !write(*,*)'  thref ',thref(p)
+    !write(*,*)'  dT    ',(thref(p) - taf(p))
+    !write(*,*)'  zlog  ',zlog
+    !write(*,*)'  vkc   ',vkc
+    !write(*,*)'  tv*   ',tvstar
+    !write(*,*)'  thvref',thvref
+   !!write(*,*)'ustar ',ustar(p)
+   !!write(*,*)'qstar ',qstar
+   !!write(*,*)'tstar ',tstar
+   !!write(*,*)'obu_new: ',ustar(p)**2._r8, thvref(p), vkc, grav, tvstar
 
     ! Change in Obukhov length (m)
 
     obu_dif = obu_new - obu_val
+    !write(*,*)'refs   : ',uref(p),qref(p),thref(p),thvref(p)
+    !write(*,*)'can    : ',qaf(p),taf(p)
+    !write(*,*)'star   : ',ustar,tstar,qstar
+    !write(*,*)'obu_dif: ',obu_dif,obu_new,obu_val
+   !!write(*,*)''
+    !write(*,*)'  obu_v',obu_val
+    !write(*,*)'  obu  ',obu_new
+    !write(*,*)'  obu_d',obu_dif
 
     end associate
   end subroutine ObuFunc
@@ -623,17 +676,17 @@ contains
        bb = 0._r8
        cc = 1._r8
        dd = -beta_neutral
-       qq = (2._r8*bb**3 - 9._r8*aa*bb*cc + 27._r8*(aa**2)*dd)**2 - 4._r8*(bb**2 - 3._r8*aa*cc)**3
+       qq = (2._r8*bb**3 - 9._r8*aa*bb*cc + 27._r8*(aa**2)*dd)**2 - 4._r8*(bb**2._r8 - 3._r8*aa*cc)**3
        qq = sqrt(qq)
        rr = 0.5_r8 * (qq + 2._r8*bb**3 - 9._r8*aa*bb*cc + 27._r8*(aa**2)*dd)
        rr = rr**(1._r8/3._r8)
-       beta = -(bb+rr)/(3._r8*aa) - (bb**2 - 3._r8*aa*cc)/(3._r8*aa*rr)    
+       beta = -(bb+rr)/(3._r8*aa) - (bb**2._r8 - 3._r8*aa*cc)/(3._r8*aa*rr)    
 
     end if
 
     ! Error check
 
-    y = LcL_val * beta**2 
+    y = LcL_val * beta**2.0_r8 
     fy = phim_monin_obukhov(y)
     err = beta * fy - beta_neutral
     if (abs(err) > 1.e-06_r8) then
@@ -643,6 +696,7 @@ contains
     ! Place limits on beta
 
     beta = min(beta_max, max(beta,beta_min))
+   !!write(*,*)'beta ',beta
 
   end subroutine GetBeta
 
@@ -674,7 +728,8 @@ contains
 
   !-----------------------------------------------------------------------
   subroutine GetPsiRSL (za, hc, disp, obu, beta, PrSc, psim, psic)
-    !
+  !call GetPsiRSL (zref(p), ztop(p), zdisp(p), obu_cur, beta(p), PrSc(p), psim, psic)
+   !
     ! !DESCRIPTION:
     ! Calculate the stability functions psi for momentum and scalars. The
     ! returned function values (psim, psic) are the Monin-Obukhov psi functions
@@ -707,6 +762,12 @@ contains
     real(r8) :: psi2                   ! Monin-Obukhov psi function evaluated at hc
     !---------------------------------------------------------------------
 
+    !write(*,*)'za   ',za
+    !write(*,*)'hc   ',hc
+    !write(*,*)'disp ',disp
+    !write(*,*)'obu  ',obu
+    !write(*,*)'beta ',beta
+    !write(*,*)'PrSc ',PrSc
     dt = hc - disp
 
     ! In the RSL theory, c1 and c2 represent the scaled magnitude and
@@ -731,7 +792,10 @@ contains
     !         |<-------------- c1 --------------->|
 
     phim = phim_monin_obukhov((hc-disp)/obu)
+   !!write(*,*)'phim:',phim,hc,disp,hc-disp
     c1 = (1._r8 - vkc / (2._r8 * beta * phim)) * exp(0.5_r8*c2)
+    !write(*,*)'phim ',phim
+   !!write(*,*)'c1',c1
 
     ! Evaluate the roughness sublayer psihat function for momentum at
     ! the height za and at the canopy height hc. Values for psihat are obtained
@@ -742,8 +806,13 @@ contains
     ! This means that the returned psihat value needs to be scaled (multiplied) by
     ! c1 before it fully represents psihat as it appears in the RSL equations.
 
+    !write(*,*)'c1        ',c1
+    !write(*,*)'(za-hc)/dt',(za-hc)/dt
+    !write(*,*)'dt/obu    ',dt/obu
     call LookupPsihat ((za-hc)/dt, dt/obu, zdtgridM, dtLgridM, psigridM, psihat1)
     call LookupPsihat ((hc-hc)/dt, dt/obu, zdtgridM, dtLgridM, psigridM, psihat2)
+     !write(*,*)'psihat1',psihat1
+     !write(*,*)'psihat2',psihat2
     psihat1 = psihat1 * c1
     psihat2 = psihat2 * c1
 
@@ -756,6 +825,7 @@ contains
     ! psi function for momentum including RSL influence
 
     psim = -psi1 + psi2 + psihat1 - psihat2 + vkc / beta
+    !write(*,*)'psim: ',psi1, psi2, psihat1,psihat2
 
     ! Now do the same for scalars
 
@@ -771,6 +841,7 @@ contains
     psi2 = psic_monin_obukhov((hc-disp)/obu)
 
     psic = -psi1 + psi2 + psihat1 - psihat2
+    !write(*,*)'psic: ',psi1, psi2, psihat1, psihat2
 
   end subroutine GetPsiRSL
 
@@ -965,6 +1036,7 @@ contains
 
     psihat = wZ1 * wL1 * psigrid(Z1,L1) + wZ2 * wL1 * psigrid(Z2,L1) &
            + wZ1 * wL2 * psigrid(Z1,L2) + wZ2 * wL2 * psigrid(Z2,L2)
+    !psihat = 0._r8
 
   end subroutine LookupPsihat
 
@@ -1012,6 +1084,7 @@ contains
 
     ! Above-canopy wind profile: wind speed is defined at zs
 
+   !write(*,*)'windprofile: ',ncan(p)
     do ic = ntop(p)+1, ncan(p)
        call GetPsiRSL (zs(p,ic), ztop(p), zdisp(p), obu(p), beta(p), PrSc(p), psim, psic)
        zlog_m = log((zs(p,ic)-zdisp(p)) / (ztop(p)-zdisp(p)))
@@ -1027,6 +1100,7 @@ contains
     do ic = 1, ntop(p)
        wind(p,ic) = uaf(p) * exp((zs(p,ic) - ztop(p)) / lm_over_beta)
        wind(p,ic) = max(wind(p,ic), wind_min)
+      !!write(*,*)ic,wind(p,ic)
     end do
 
     ! Average wind in the canopy, weighted by layer thickness
@@ -1039,6 +1113,10 @@ contains
 !   wind(p,1:ntop(p)) = ave
 !   wind(p,1:ntop(p)) = ustar(p)
 
+    !write(*,*)'wind profile: obu(p) = ',obu(p)
+    !do ic = 1, ncan(p)
+    !  write(*,*)ic,wind(p,ic)
+    !enddo
     end associate
   end subroutine WindProfile
 
@@ -1072,6 +1150,7 @@ contains
     real(r8) :: sumres                    ! Sum of aerodynamic resistances above canopy
     real(r8) :: gac_above_foliage         ! Aerodynamic conductance for top/bottom foliage layer
     real(r8) :: gac_below_foliage         ! Aerodynamic conductance for top/bottom foliage layer
+    integer :: istep, isubstep
     !---------------------------------------------------------------------
 
     associate ( &
@@ -1115,6 +1194,7 @@ contains
     psic = psic2 - psic1
     zlog_c = log((zref(p)-zdisp(p)) / (zs(p,ic)-zdisp(p)))
     gac(p,ic) = rhomol(p) * vkc * ustar(p) / (zlog_c + psic)
+    !!write(*,*)'gac: ',ic,gac(p,ic),rhomol(p), vkc, ustar(p), zlog_c, psic
 
     ! The top foliage layer includes terms for within and above the canopy. Here,
     ! calculate the conductance from top of foliage at height ztop to the layer
@@ -1169,13 +1249,19 @@ contains
     res = PrSc(p) / (beta(p) * ustar(p)) * (exp(-zl/lm_over_beta) - exp(-zu/lm_over_beta))
     gac0(p) = rhomol(p) / res
 
-!   zlog_m = log(zs(p,1)/z0mg)                     !!! CLMml v0 CODE !!!
-!   ustar_g = wind(p,1) * vkc / zlog_m             !!! CLMml v0 CODE !!!
-!   ustar_g = max(ustar_g, 0.01_r8)                !!! CLMml v0 CODE !!!
-!   z0cg = 0.1_r8 * z0mg                           !!! CLMml v0 CODE !!!
-!   zlog_c = log(zs(p,1)/z0cg)                     !!! CLMml v0 CODE !!!
-!   gac0(p) = rhomol(p) * vkc * ustar_g / zlog_c   !!! CLMml v0 CODE !!!
+   zlog_m = log(zs(p,1)/z0mg)                     !!! CLMml v0 CODE !!!
+   ustar_g = wind(p,1) * vkc / zlog_m             !!! CLMml v0 CODE !!!
+   ustar_g = max(ustar_g, 0.01_r8)                !!! CLMml v0 CODE !!!
+   z0cg = 0.1_r8 * z0mg                           !!! CLMml v0 CODE !!!
+   zlog_c = log(zs(p,1)/z0cg)                     !!! CLMml v0 CODE !!!
+   gac0(p) = rhomol(p) * vkc * ustar_g / zlog_c   !!! CLMml v0 CODE !!!
+  !!write(*,*)'rho  ',rhomol(p)
+  !!write(*,*)'vkc  ',vkc
+  !!write(*,*)'ustar',ustar_g
+  !!write(*,*)'zlog ',zlog_c
+  !!write(*,*)'gac0 ',gac0
 
+    !!write(*,*)'zs(p,1) ',zs(p,1),'z0mg',z0mg,'gac0 ',gac0(p)
     if (z0mg > zs(p,1) .or. z0cg > zs(p,1)) then
        call endrun (msg=' ERROR: CanopyTurbulenceMod: soil roughness error')
     end if
@@ -1185,6 +1271,7 @@ contains
     res = min (rhomol(p)/gac0(p), ra_max)
     gac0(p) = rhomol(p) / res
 
+    ic = 0
     do ic = 1, ncan(p)
        res = min (rhomol(p)/gac(p,ic), ra_max)
        gac(p,ic) = rhomol(p) / res
@@ -1194,7 +1281,7 @@ contains
   end subroutine AerodynamicConductance
 
   !-----------------------------------------------------------------------
-  subroutine FluxProfileSolution (p, mlcanopy_inst)
+  subroutine FluxProfileSolution (p, mlcanopy_inst, istep, isubstep)
     !
     ! !DESCRIPTION:
     ! Compute scalar source/sink fluxes for leaves/soil and concentration
@@ -1280,6 +1367,8 @@ contains
     real(r8) :: err                           ! Energy imbalance (W/m2)
     real(r8) :: sum_src                       ! Sum of source flux over all layers
     real(r8) :: sum_storage                   ! Sum of storage flux over all layers
+    integer :: istep, isubstep
+    character(len=20) :: stepstring, substepstring
     !---------------------------------------------------------------------
 
     associate ( &
@@ -1288,6 +1377,7 @@ contains
     thref     => mlcanopy_inst%thref_forcing    , &  ! Atmospheric potential temperature at reference height (K)
     eref      => mlcanopy_inst%eref_forcing     , &  ! Vapor pressure at reference height (Pa)
     pref      => mlcanopy_inst%pref_forcing     , &  ! Air pressure at reference height (Pa)
+    pref_prev => mlcanopy_inst%pref_prev_forcing, &  ! Air pressure at reference height from previous timestep (Pa)
     rhomol    => mlcanopy_inst%rhomol_forcing   , &  ! Molar density at reference height (mol/m3)
     cpair     => mlcanopy_inst%cpair_forcing    , &  ! Specific heat of air (constant pressure) at reference height (J/mol/K)
     ncan      => mlcanopy_inst%ncan_canopy      , &  ! Number of aboveground layers
@@ -1314,6 +1404,7 @@ contains
     gs        => mlcanopy_inst%gs_leaf          , &  ! Leaf stomatal conductance (mol H2O/m2 leaf/s)
     rnleaf    => mlcanopy_inst%rnleaf_leaf      , &  ! Leaf net radiation (W/m2 leaf)
     tleaf_bef => mlcanopy_inst%tleaf_bef_leaf   , &  ! Leaf temperature for previous timestep (K)
+    wind      => mlcanopy_inst%wind_profile     , &  ! Canopy layer wind speed (m/s)
                                                      ! *** Output ***
     tair      => mlcanopy_inst%tair_profile     , &  ! Canopy layer air temperature (K)
     eair      => mlcanopy_inst%eair_profile     , &  ! Canopy layer vapor pressure (Pa)
@@ -1356,17 +1447,61 @@ contains
 
     call SatVap (tg_bef(p), esat, desat)               ! Vapor pressure (Pa) at ground temperature
     qsat0 = esat / pref(p) ; dqsat0 = desat / pref(p)  ! Pa -> mol/mol
+    !write(*,*)'tg_bef(p): ',tg_bef(p)
 
     gsw = (1._r8 / soilres(p)) * rhomol(p)             ! Soil conductance for water vapor: s/m -> mol H2O/m2/s
     gs0 = gac0(p) * gsw / (gac0(p) + gsw)              ! Total soil-to-air conductance, including aerodynamic term
+    !!write(*,*)'gsw',gsw,'soilres(p)',soilres(p),'rhomol',rhomol(p)    
+    !!write(*,*)'gs0',gs0,'gac0',gac0(p)
+    
 
     c02 = soil_tk(p) / soil_dz(p)                      ! Soil heat flux term (W/m2/K)
     c01 = -c02 * soil_t(p)                             ! Soil heat flux term (W/m2)
+    !write(*,*)'*********** soil_t: ',soil_t
 
     den = cpair(p) * gac0(p) + lambda * rhg(p) * gs0 * dqsat0 + c02
     alpha0 = cpair(p) * gac0(p) / den
     beta0 = lambda * gs0 / den
     delta0 = (rnsoi(p) - lambda * rhg(p) * gs0 * (qsat0 - dqsat0 * tg_bef(p)) - c01) / den
+    !write(*,*)'%rnsoi(p) ',rnsoi(p)
+    !write(*,*)'%alpha0 ',alpha0
+    !write(*,*)'%beta0  ',beta0
+    !write(*,*)'%delta0 ',delta0
+    !write(*,*)'num ',delta0*den,'den',den,'delta0',delta0
+    !write(*,*)'  term1',rnsoi(p)
+    !write(*,*)'  term2',lambda * rhg(p) * gs0 * (qsat0 - dqsat0 * tg_bef(p))
+    !write(*,*)'  term3',c01
+    !write(*,*)'  soil_t(p)  ',soil_t(p)
+    !write(*,*)'  soil_tk(p) ',soil_tk(p)
+    !write(*,*)'alpha0',alpha0,'beta0',beta0,'gamma0',delta0
+#if 1
+   !!write(*,*)'++++++++++++++++++++++++++'
+   !!write(*,*)'rnsoi ',rnsoi(p)
+   !!write(*,*)'lambda',lambda
+   !!write(*,*)'rhg   ',rhg
+   !!write(*,*)'gs0   ',gs0
+   !!write(*,*)'qsat0 ',qsat0,'Tg',tg_bef(p)
+   !!write(*,*)'dqsat0',dqsat0
+   !!write(*,*)'tg    ',tg_bef
+   !!write(*,*)'c02   ',c02, 'c01 ',c01
+   !!write(*,*)'numer ',(rnsoi(p) - lambda * rhg(p) * gs0 * (qsat0 - dqsat0 * tg_bef(p)) - c01)
+   !!write(*,*)'denom ',den
+    !call exit(0)
+   !!write(*,*)'++++++++++++++++++++++++++'
+   !!write(*,*)'cpair ',cpair
+   !!write(*,*)'gs0   ',gs0
+   !!write(*,*)'numer '
+   !!write(*,*)'den   ',den!, cpair(p), gac0(p), lambda, rhg(p), gs0, dqsat0, c02
+   !!write(*,*)'alpha0 ',alpha0
+   !!write(*,*)'beta0  ',beta0
+   !!write(*,*)'soil_tk',soil_tk(p)
+   !!write(*,*)'soil_dz',soil_dz(p)
+   !!write(*,*)'soil_t ',soil_t(p)
+   !!write(*,*)'b_p    ',delta0*den
+    !!write(*,*)'delta0 ',delta0, rnsoi(p),lambda,rhg(p),gs0,qsat0,dqsat0,tg_bef(p),c01,den
+    !!write(*,*)'dtime = ',dtime;
+    !call exit(0)
+#endif
 
     ! Similarly, re-arrange the leaf energy balance to calculate leaf
     ! temperature in relation to T and q:
@@ -1374,6 +1509,7 @@ contains
     ! Tlsun(i) = alpha_sun(i)*T(i) + beta_sun(i)*q(i) + delta_sun(i)
     ! Tlsha(i) = alpha_sha(i)*T(i) + beta_sha(i)*q(i) + delta_sha(i)
 
+    !write(*,*)'alpha,beta,delta:'
     do ic = 1, ncan(p)
 
        ! Calculate terms for sunlit and shaded leaves
@@ -1386,6 +1522,11 @@ contains
 
              gleaf_sh(ic,il) = 2._r8 * gbh(p,ic,il)
              gleaf_et(ic,il) = gs(p,ic,il)*gbv(p,ic,il)/(gs(p,ic,il)+gbv(p,ic,il)) * fdry(p,ic) + gbv(p,ic,il) * fwet(p,ic)
+             !write(*,*)'ic ',ic,il,gbh(p,ic,il),gbv(p,ic,il),gs(p,ic,il),rnleaf(p,ic,il)
+             if (il == 2) then
+                !!write(*,*) gs(p,ic,il),gbv(p,ic,il)
+                !call exit(0)
+             endif
 
              ! Heat capacity of leaves
 
@@ -1399,6 +1540,8 @@ contains
 
              call SatVap (tleaf_bef(p,ic,il), esat, desat)
              qsat = esat / pref(p) ; dqsat(ic,il) = desat / pref(p)
+             !write(*,*)tleaf_bef(p,ic,il),pref(p)
+             !write(*,*)qsat, dqsat(ic,il)
 
              ! Term for linearized vapor pressure at leaf temperature:
              ! qsat(tleaf) = qsat(tleaf_bef) + dqsat * (tleaf - tleaf_bef)
@@ -1414,6 +1557,70 @@ contains
              delta(ic,il) = avail_energy(ic,il) / den &
                           - lambda * gleaf_et(ic,il) * qsat_term(ic,il) / den &
                           + heatcap(ic,il) / dtime * tleaf_bef(p,ic,il) / den
+             !write(*,*)'% delta_num ',delta(ic,il)*den,'delta_den',den,'cp',heatcap(ic,il),&
+             !'term1 ', avail_energy(ic,il), &
+             !'term2 ', heatcap(ic,il) / dtime * tleaf_bef(p,ic,il), &
+             !'term3 ', lambda * gleaf_et(ic,il) * qsat_term(ic,il), &
+             !'dqsat ',dqsat(ic,il), &
+             !'T ',tleaf_bef(p,ic,il), &
+             !'G_e',gleaf_et(ic,il), &
+             !'fdry(p,ic) ',fdry(p,ic), &
+             !'fwet(p,ic) ',fwet(p,ic)
+             !'qsat_term', qsat_term(ic,il)
+             !write(*,*)ic,il,alpha(ic,il),beta(ic,il),delta(ic,il),den
+
+             !write(*,*)ic,il,gleaf_sh(ic,il) * cpair(p), gleaf_et(ic,il) * lambda, delta(ic,il)*den, den, gbh(p,ic,il),gleaf_et(ic,il),gs(p,ic,il),gbv(p,ic,il)
+             !write(*,*)'den ',den,'gleaf_et(ic,il)',gleaf_et(ic,il)
+             !write(*,*)heatcap(ic,il) / dtime, gleaf_sh(ic,il) * cpair(p), gleaf_et(ic,il) * lambda * dqsat(ic,il)
+             !write(*,*)'gleaf_sh(ic,il) * cpair(p)',gleaf_sh(ic,il), cpair(p),'gbh(p,ic,il) ',gbh(p,ic,il)
+             !call exit(0)
+!             if (il == 2)
+              !write(*,*)ic,il,alpha(ic,il)*den,beta(ic,il)*den,delta(ic,il)*den,den, &
+              !avail_energy(ic,il), &
+              !lambda * gleaf_et(ic,il) * qsat_term(ic,il), &
+              !heatcap(ic,il) / dtime * tleaf_bef(p,ic,il), &
+              !lambda, &
+              !qsat, &
+              !dqsat(ic,il), &
+              !tleaf_bef(p,ic,il), &
+              !pref(p)
+             !if (il == 2) then
+               !!write(*,*)ic,gleaf_sh(ic,il-1),gbh(p,ic,il-1),alpha(ic,il-1),gleaf_sh(ic,il),gbh(p,ic,il),alpha(ic,il), beta(ic,il-1),beta(ic,il),gleaf_et(ic,il-1),gleaf_et(ic,il)
+             !endif
+             !if(il==2)!!write(*,*)gleaf_et(ic,il-1),gleaf_et(ic,il)
+             !!write(*,*)ic,alpha(ic,il),beta(ic,il),delta(ic,il)
+            !if (il == 2)!!write(*,*) fracsun(p,ic), dpai(p,ic)
+             !if (il == 1)!!write(*,*)ic,il,rnleaf(p,ic,il),den,delta(ic,il)
+             !!write(*,*)'ic,il',ic,il
+             !!write(*,*)'den  ',den
+             !!write(*,*)'cp   ',heatcap(ic,il)
+             !!write(*,*)'dt   ',dtime
+             !!write(*,*)'cpair',cpair(p)
+             !!!write(*,*)'g_sh ',gleaf_sh(ic,il)
+             !!write(*,*)'gbh  ',gbh(p,ic,il)
+             !!write(*,*)'g_et ',gleaf_et(ic,il)
+             !!write(*,*)'dqsat',dqsat(ic,il)
+             !!write(*,*)'gs   ',gs(p,ic,il)
+             !!write(*,*)'gbv  ',gbv(p,ic,il)
+             !!write(*,*)'fdry ',fdry(p,ic), fwet(p,ic)
+             !if (il == 2) 
+#if 0
+                          !write(*,*)ic,il,alpha(ic,il)*den,beta(ic,il)*den,delta(ic,il)*den, &
+               avail_energy(ic,il), &
+               heatcap(ic,il) / dtime * tleaf_bef(p,ic,il), &
+               lambda * gleaf_et(ic,il) * qsat_term(ic,il), &
+               tleaf_bef(p,ic,il), &
+               gleaf_et(ic,il), &
+               qsat_term(ic,il), &
+               gs(p,ic,il), &
+               gbv(p,ic,il)
+#endif
+             !write(*,*)ic,il,gbh(p,ic,il)
+
+             !!write(*,*)'den',den, &
+             !  heatcap(ic,il) / dtime, &
+             !  gleaf_sh(ic,il) * cpair(p), &
+             !  gleaf_et(ic,il) * lambda * dqsat(ic,il)
 
              ! Now scale flux terms for leaf area so that fluxes are for the canopy layer
 
@@ -1423,6 +1630,29 @@ contains
                 pai = dpai(p,ic) * (1._r8 - fracsun(p,ic))
              end if
 
+#if 0
+             if (il == 1) write(*,*) &
+               delta(ic,il)*den, &
+               den, &
+               heatcap(ic,il) / dtime, &
+               gleaf_sh(ic,il) * cpair(p), &
+               gleaf_et(ic,il) * lambda * dqsat(ic,il), &
+               gleaf_et(ic,il), &
+               gs(p,ic,il), &
+               gbv(p,ic,il), &
+               avail_energy(ic,il), &
+               -dqsat(ic,il) * gleaf_et(ic,il), &
+               dqsat(ic,il), &
+               -dqsat(ic,il) * gleaf_et(ic,il) * lambda *pai
+#endif
+             if (il == -1) write(*,*) &
+             -dqsat(ic,il) * gleaf_et(ic,il) * pai, & ! alpha_27
+             lambda        * gleaf_et(ic,il)      , & ! alpha_35
+             den                                  , &  ! alpha_37
+             gleaf_et(ic,il)
+
+
+             !write(*,*)'% pai: ',ic,il,pai,dpai(p,ic),fracsun(p,ic),gleaf_sh(ic,il) * pai
              gleaf_sh(ic,il) = gleaf_sh(ic,il) * pai
              gleaf_et(ic,il) = gleaf_et(ic,il) * pai
              heatcap(ic,il) = heatcap(ic,il) * pai
@@ -1471,6 +1701,9 @@ contains
     ! a1, b11, b12, c1, d1 coefficients for air temperature
     ! a2, b21, b22, c2, d2 coefficients for water vapor mole fraction
 
+    !write(*,*)'a1,a2, ... rhomol ',rhomol(p)
+    !write(*,*)'canopy air: mpp_beta2'
+    !write(*,*)'tmp = ['
     do ic = 1, ncan(p)
 
        ! Storage term
@@ -1491,11 +1724,26 @@ contains
        b12(ic) = -gleaf_sh(ic,isun) * beta(ic,isun) - gleaf_sh(ic,isha) * beta(ic,isha)
        c1(ic) = -gac(p,ic)
        d1(ic) = rho_dz_over_dt * tair_bef(p,ic) + gleaf_sh(ic,isun) * delta(ic,isun) + gleaf_sh(ic,isha) * delta(ic,isha)
+       !!write(*,*)'tair_bef(p,ic): ',ic,tair_bef(p,ic),'q: ',(eair_bef(p,ic) / pref(p)),'eair: ',eair_bef(p,ic)
+       !!write(*,*)ic,gleaf_sh(ic,isun),gleaf_sh(ic,isha)
+       !!write(*,*)ic, d1(ic), rho_dz_over_dt, tair_bef(p,ic), gleaf_sh(ic,isun), delta(ic,isun), gleaf_sh(ic,isha), delta(ic,isha)
+       if (ic == -1 .or. ic == -6) then
+       write(*,*)'ic =',ic
+       write(*,*)'d1 :'
+       write(*,*)' beta1_MPP  :',ic,rho_dz_over_dt * tair_bef(p,ic)
+       write(*,*)' alpha17_MPP = ', gleaf_sh(ic,isun), 'alpha18_MPP = ',gleaf_sh(ic,isha),'(beta2/alpha37)_MPP = ',delta(ic,isun), '(beta4/alpha48)_MPP = ', delta(ic,isha)
+       write(*,*)' gleaf_sh(ic,isun) = ',gleaf_sh(ic,isun),'gleaf_sh(ic,isha) = ',gleaf_sh(ic,isha)
+       write(*,*)' gbh(p,ic,isun) =  ',gbh(p,ic,isun),'gbh(p,ic,isha) = ',gbh(p,ic,isha)
+       write(*,*)' pai = ',dpai(p,ic) * fracsun(p,ic)
+       endif
+       !if (ic == 6) call exit(0)
 
        ! Special case for top layer
 
        if (ic == ncan(p)) then
           c1(ic) = 0._r8
+          !write(*,*)''
+          !write(*,*)'top: d1:', d1(ic), gac(p,ic)*thref(p),gac(p,ic),thref(p)
           d1(ic) = d1(ic) + gac(p,ic) * thref(p)
        end if
 
@@ -1503,15 +1751,34 @@ contains
 
        if (ic == 1) then
           a1(ic) = 0._r8
+          !write(*,*)'gac0(p) * alpha0',gac0(p) * alpha0,gac0(p), alpha0,'b11(1)',b11(ic)
+          !write(*,*)'rho*dz/dt',rho_dz_over_dt,'ga_{-1/2}', gac_ic_minus_one,'ga_{1/2}', gac(p,ic)
           b11(ic) = b11(ic) - gac0(p) * alpha0
           b12(ic) = b12(ic) - gac0(p) * beta0
+          !!write(*,*)'bottom'
+          !!write(*,*)d1(ic),gac0(p),delta0
+         !!write(*,*)'++++++++++++++++++++++++++'
+         !!write(*,*)'b11 += ', gac0(p) * alpha0
+         !!write(*,*)'gac    ', gac0(p)
+         !!write(*,*)'alpha0 ',alpha0
+         !!write(*,*)'b11  = ',b11(ic)
+          !call exit(0)
+         !!write(*,*)'++++++++++++++++++++++++++'
+         !!write(*,*)'gs0   ',gac0(p)
+         !!write(*,*)'alpha0',alpha0
+         !!write(*,*)'value ',gac0(p)
           d1(ic) = d1(ic) + gac0(p) * delta0
+         !!write(*,*)'d1: '
+         !!write(*,*)'gac0(p) ',gac0(p)
+         !!write(*,*)'delta0  ',delta0
+          !call exit(0)
        end if
 
        ! a2,b21,b22,c2,d2 coefficients for water vapor mole fraction
 
        if (ic == 1) then
           gac_ic_minus_one = gs0
+          !!write(*,*)'gs0',gs0
        else
           gac_ic_minus_one = gac(p,ic-1)
        end if
@@ -1522,15 +1789,35 @@ contains
                + gleaf_et(ic,isun) * (1._r8 - dqsat(ic,isun) * beta(ic,isun)) &
                + gleaf_et(ic,isha) * (1._r8 - dqsat(ic,isha) * beta(ic,isha))
        c2(ic) = -gac(p,ic)
-       d2(ic) = rho_dz_over_dt * (eair_bef(p,ic) / pref(p)) &
-              + gleaf_et(ic,isun) * (dqsat(ic,isun) * delta(ic,isun) + qsat_term(ic,isun)) &
-              + gleaf_et(ic,isha) * (dqsat(ic,isha) * delta(ic,isha) + qsat_term(ic,isha)) 
+       if (isubstep == 1) then
+         d2(ic) = rho_dz_over_dt * (eair_bef(p,ic) / pref_prev(p)) &
+         + gleaf_et(ic,isun) * (dqsat(ic,isun) * delta(ic,isun) + qsat_term(ic,isun)) &
+         + gleaf_et(ic,isha) * (dqsat(ic,isha) * delta(ic,isha) + qsat_term(ic,isha)) 
+       else
+         d2(ic) = rho_dz_over_dt * (eair_bef(p,ic) / pref(p)) &
+         + gleaf_et(ic,isun) * (dqsat(ic,isun) * delta(ic,isun) + qsat_term(ic,isun)) &
+         + gleaf_et(ic,isha) * (dqsat(ic,isha) * delta(ic,isha) + qsat_term(ic,isha)) 
+       endif
+   !      !!write(*,*)eair_bef(p,ic)
+!      !!write(*,*)pref(p)
+       !!write(*,*)'(eair_bef(p,ic) / pref(p)) ',ic,(eair_bef(p,ic) / pref(p))
+       !       call exit(0)
 
+              ! canopy air: mpp_beta2
+              !write(*,*)ic, rho_dz_over_dt * (eair_bef(p,ic) / pref(p))
+              !write(*,*)ic, gleaf_et(ic,isun) * (qsat_term(ic,isun))
+              !write(*,*)ic, gleaf_et(ic,isha) * (qsat_term(ic,isha)) 
+
+ 
        ! Special case for top layer
 
        if (ic == ncan(p)) then
           c2(ic) = 0._r8
+         ! write(*,*)''
+         !write(*,*)'d2:',d2(ic),'bc',gac(p,ic) * (eref(p) / pref(p)), 'gac',gac(p,ic),'e/P',eref(p)/pref(p)
           d2(ic) = d2(ic) + gac(p,ic) * (eref(p) / pref(p))
+         !!write(*,*)eref(p)
+         !write(*,*)'d2:  (eref(p) / pref(p)) ', (eref(p) / pref(p))
        end if
 
        ! Special case for first canopy layer (i.e., immediately above the ground)
@@ -1540,9 +1827,38 @@ contains
           b21(ic) = b21(ic) - gs0 * rhg(p) * dqsat0 * alpha0
           b22(ic) = b22(ic) - gs0 * rhg(p) * dqsat0 * beta0
           d2(ic) = d2(ic) + gs0 * rhg(p) * (qsat0 + dqsat0 * (delta0 - tg_bef(p)))
+         !!write(*,*)''
+         !!write(*,*)'gs0   ',gs0
+         !!write(*,*)'rhg   ',rhg(p)
+         !!write(*,*)'qsat0',qsat0
+         !!write(*,*)'dqsat0',dqsat0
+         !!write(*,*)'delta0',delta0
+         !!write(*,*)'tg    ',tg_bef(p)
+         !!write(*,*)'d20  ',gs0 * rhg(p) * (qsat0 + dqsat0 * (delta0 - tg_bef(p)))
+         !!write(*,*)'beta0',beta0
+         !!write(*,*)'b22::',gs0 * rhg(p) * dqsat0 * beta0
+         !!write(*,*)'b11::',gs0 * rhg(p) * dqsat0 * alpha0
+!          call exit(0)
+          !!write(*,*)'mpp beta2: ',gs0 * rhg(p) * (qsat0 + dqsat0 * (delta0 - tg_bef(p))), &
+          !rhg(p), qsat0, dqsat0, tg_bef(p)
        end if
+       if (ic == 1) then
+         gac_ic_minus_one = gac0(p)
+      else
+         gac_ic_minus_one = gac(p,ic-1)
+      end if
+      !write(*,*)ic,a1(ic),a2(ic),b11(ic),b12(ic),b21(ic),b22(ic),c1(ic),c2(ic),d1(ic),d2(ic), &
+      !   delta(ic,isun),delta(ic,isha),gleaf_sh(ic,isun),gleaf_sh(ic,isha), &
+      !   gbh(p,ic,isun), gbh(p,ic,isha), &
+      !   dpai(p,ic), fracsun(p,ic), &
+      !   rho_dz_over_dt + gac_ic_minus_one + gac(p,ic) + gleaf_sh(ic,isun) + gleaf_sh(ic,isha), &
+      !   rho_dz_over_dt , gac_ic_minus_one , gac(p,ic) , gleaf_sh(ic,isun) , gleaf_sh(ic,isha), &
+      !   rho_dz_over_dt * tair_bef(p,ic)
+       !call exit(0)
 
     end do
+    !write(*,*)'];'
+    !call exit(0)
 
     ! Solve for air temperature and water vapor (mol/mol):
     !
@@ -1555,21 +1871,34 @@ contains
 
     ! Soil surface temperature (K) and vapor pressure (mol/mol)
 
+    !write(*,*)'after tridiag:'
+    do ic = 1, ncan(p)
+    !  write(*,*)ic,tair(p,ic),eair(p,ic)      
+    enddo
     t0 = alpha0 * tair(p,1) + beta0 * eair(p,1) + delta0
     e0 = rhg(p) * (qsat0 + dqsat0 * (t0 - tg_bef(p)))
+    !write(*,*)'t0 = ',t0
 
     ! Leaf temperature
 
+   !write(*,*)'MLC output tleaf, tair, qair, wind:'
+    write(stepstring,*)istep
+    write(substepstring,*)isubstep
+    if (mlcanopy_inst%screen_output == 1 .and. isubstep == 12) write(*,*)'clm.prof{' // trim(adjustl(stepstring)) // ',' // trim(adjustl(substepstring))  // '} = ['
     do ic = 1, ncan(p)
        tleaf_implic(ic,isun) = alpha(ic,isun)*tair(p,ic) + beta(ic,isun)*eair(p,ic) + delta(ic,isun)
        tleaf_implic(ic,isha) = alpha(ic,isha)*tair(p,ic) + beta(ic,isha)*eair(p,ic) + delta(ic,isha)
+       if (mlcanopy_inst%screen_output == 1 .and. isubstep == 12) write(*,*)ic,tleaf_implic(ic,isun),tleaf_implic(ic,isha),tair(p,ic),eair(p,ic), wind(p,ic)
     end do
+    if (mlcanopy_inst%screen_output == 1 .and. isubstep == 12) write(*,*)'];'
+    !call exit(0)
 
     ! Convert water vapor from mol/mol to Pa
 
     do ic = 1, ncan(p)
        eair(p,ic) = eair(p,ic) * pref(p)
     end do
+    !write(*,*)'pref(p): ',pref(p),'eair(p,6) ',eair(p,6)
     e0 = e0 * pref(p)
 
     ! Use LeafFluxes to calculate leaf fluxes (per unit leaf area) for the
@@ -1628,6 +1957,8 @@ contains
           if (abs(tleaf(p,ic,isha)-tleaf_implic(ic,isha)) > 1.e-06_r8) then
              call endrun (msg=' ERROR: FluxProfileSolution: Leaf temperature error (shaded)')
           end if
+          tleaf(p,ic,isun) = tleaf_implic(ic,isun)
+          tleaf(p,ic,isha) = tleaf_implic(ic,isha)
        end if
     end do
 
@@ -1663,6 +1994,7 @@ contains
     if (abs(eg(p)-e0) > 1.e-06_r8) then
        call endrun (msg=' ERROR: FluxProfileSolution: Soil surface vapor pressure error')
     end if
+    tg(p) = t0
 
     ! Vertical sensible heat and water vapor fluxes between layers
 
@@ -1676,10 +2008,16 @@ contains
 
     ! Canopy air storage flux (W/m2) and its component terms
 
+    !!write(*,*)'profiles:'
     do ic = 1, ncan(p)
        storage_sh(ic) = rhomol(p) * cpair(p) * (tair(p,ic) - tair_bef(p,ic)) * dz(p,ic) / dtime
-       storage_et(ic) = rhomol(p) * (eair(p,ic) - eair_bef(p,ic)) / pref(p) * dz(p,ic) / dtime
+       if (isubstep == 1) then
+         storage_et(ic) = rhomol(p) * (eair(p,ic)/pref(p) - eair_bef(p,ic) / pref_prev(p)) * dz(p,ic) / dtime
+       else
+         storage_et(ic) = rhomol(p) * (eair(p,ic) - eair_bef(p,ic)) / pref(p) * dz(p,ic) / dtime
+      endif
        stair(p,ic) = storage_sh(ic) + storage_et(ic) * lambda
+       !!write(*,*)ic,tair(p,ic),eair(p,ic),tleaf(p,ic,isun),tleaf(p,ic,isha)
     end do
 
     ! ---------------------------
@@ -1714,6 +2052,7 @@ contains
        end if
        err = err * lambda
        if (abs(err) > 0.001_r8) then
+          write(*,*)'ic = ',ic
           call endrun (msg=' ERROR: FluxProfileSolution: Latent heat layer conservation error')
        end if
     end do
@@ -1791,7 +2130,7 @@ contains
     !---------------------------------------------------------------------
 
     if (masterproc) then
-       write(iulog,*) 'Attempting to read RSL look-up table .....'
+      !write(iulog,*) 'Attempting to read RSL look-up table .....'
     end if
 
     ! Get netcdf file
@@ -1843,7 +2182,7 @@ contains
     call ncd_pio_closefile(ncid)
 
     if (masterproc) then
-       write(iulog,*) 'Successfully read RSL look-up table'
+      !write(iulog,*) 'Successfully read RSL look-up table'
     end if
 
     ! Copy netcdf variables

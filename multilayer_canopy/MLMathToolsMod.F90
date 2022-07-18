@@ -71,6 +71,7 @@ contains
     integer, parameter :: itmax = 40  ! Maximum number of iterations
     !---------------------------------------------------------------------
 
+    !write(*,*)'************ hybrid *******'
     x0 = xa
     call func (p, ic, il, mlcanopy_inst, x0, f0)
     if (f0 == 0._r8) then
@@ -95,11 +96,15 @@ contains
 
     ! First use the secant method, and then use Brent's method as a backup
 
+    !write(*,*)'Secant method'
     iter = 0
     do
+       !write(*,*)''
        iter = iter + 1
+       !write(*,*)'iter ',iter
        dx = -f1 * (x1 - x0) / (f1 - f0)
        x = x1 + dx
+       !write(*,*)' x ',x
        if (abs(dx) < tol) then
           x0 = x
           exit
@@ -164,6 +169,7 @@ contains
     real(r8), parameter :: eps = 1.e-08_r8    ! Relative error tolerance
     !---------------------------------------------------------------------
 
+    !write(*,*)'   ***** In zbrent *****'
     a = xa
     b = xb
     call func (p, ic, il, mlcanopy_inst, a, fa)
@@ -182,6 +188,7 @@ contains
     do
        if (iter == itmax) exit
        iter = iter + 1
+       !write(*,*) '+++++ iter ',iter
        if ((fb > 0._r8 .and. fc > 0._r8) .or. (fb < 0._r8 .and. fc < 0._r8)) then
           c = a
           fc = fa
@@ -197,8 +204,13 @@ contains
           fc = fa
        end if
        tol1 = 2._r8 * eps * abs(b) + 0.5_r8 * tol
+       !write(*,*)'tol1: ',tol1,eps,b,tol
        xm = 0.5_r8 * (c - b)
-       if (abs(xm) <= tol1 .or. fb == 0._r8) exit
+       if (abs(xm) <= tol1 .or. fb == 0._r8) then
+         !write(*,*)'exiting via (abs(xm) <= tol1 .or. fb == 0._r8)'
+         !write(*,*)'abs(xm) <= tol1 ',(abs(xm) <= tol1),abs(xm),tol1
+         exit
+       endif
        if (abs(e) >= tol1 .and. abs(fa) > abs(fb)) then
           s = fb / fa
           if (a == c) then
@@ -225,12 +237,16 @@ contains
        end if
        a = b
        fa = fb
+       !write(*,*)' (abs(d) > tol1)', (abs(d) > tol1),d,tol1
        if (abs(d) > tol1) then
           b = b + d
        else
           b = b + sign(tol1,xm)
        end if
+       !write(*,*)'b = ',b
        call func (p, ic, il, mlcanopy_inst, b, fb)
+       !write(*,*)'b = ',b,'fb',fb
+       !write(*,*)''
        if (fb == 0._r8) exit
     end do
     root = b
