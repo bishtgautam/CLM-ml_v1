@@ -681,7 +681,7 @@ contains
        ra = mlcan%rhomol_forcing(p) / mlcan%gac_profile(p,ic)
        lad = mlcan%dpai_profile(p,ic) / mlcan%dz_profile(p,ic)
 
-       write (nout3,'(f10.4,36f10.3)') curr_calday, mlcan%zs_profile(p,ic), zero_value, &
+       write (nout3,'(f10.4,49f10.3)') curr_calday, mlcan%zs_profile(p,ic), zero_value, &
        zero_value, zero_value, zero_value, &
        missing_value, missing_value, &
        missing_value, missing_value, &
@@ -696,6 +696,19 @@ contains
        missing_value, missing_value, &
        missing_value, missing_value, &
        missing_value, missing_value, &
+       missing_value, &
+       missing_value, &
+       missing_value, &
+       missing_value, &
+       missing_value, &
+       missing_value, &
+       missing_value, &
+       missing_value, &
+       missing_value, &
+       missing_value, &
+       missing_value, &
+       missing_value, &
+       missing_value, &
        mlcan%wind_profile(p,ic), tair, qair, mlcan%eair_profile(p,ic), mlcan%cair_profile(p,ic)
     end do
 200 continue
@@ -728,7 +741,7 @@ contains
           ! tair, eair, mlcan%vcmax25_profile(p,ic)
 
           ! Leaf fluxes (per unit leaf area)
-          write (nout3,'(f10.4,36f10.3)') curr_calday, mlcan%zs_profile(p,ic), mlcan%fracsun_profile(p,ic), &
+          write (nout3,'(f10.4,49f10.3)') curr_calday, mlcan%zs_profile(p,ic), mlcan%fracsun_profile(p,ic), &
           lad, lad*mlcan%fracsun_profile(p,ic), lad*(1._r8-mlcan%fracsun_profile(p,ic)), &
           mlcan%swleaf_leaf(p,ic,isun,:), mlcan%swleaf_leaf(p,ic,isha,:), &
           mlcan%rnleaf_leaf(p,ic,isun), mlcan%rnleaf_leaf(p,ic,isha), &
@@ -742,6 +755,18 @@ contains
           mlcan%lwp_hist_leaf(p,ic,isun), mlcan%lwp_hist_leaf(p,ic,isha), &
           mlcan%tleaf_hist_leaf(p,ic,isun), mlcan%tleaf_hist_leaf(p,ic,isha), &
           mlcan%vcmax25_leaf(p,ic,isun), mlcan%vcmax25_leaf(p,ic,isha), &
+          mlcan%swleaf_leaf(p,ic,isun,:)*mlcan%fracsun_profile(p,ic) + mlcan%swleaf_leaf(p,ic,isha,:)*(1._r8 - mlcan%fracsun_profile(p,ic)), &
+          mlcan%rnleaf_leaf(p,ic,isun)*mlcan%fracsun_profile(p,ic) + mlcan%rnleaf_leaf(p,ic,isha)*(1._r8 - mlcan%fracsun_profile(p,ic)), &
+          mlcan%shleaf_leaf(p,ic,isun)*mlcan%fracsun_profile(p,ic) + mlcan%shleaf_leaf(p,ic,isha)*(1._r8 - mlcan%fracsun_profile(p,ic)), &
+          mlcan%lhleaf_leaf(p,ic,isun)*mlcan%fracsun_profile(p,ic) + mlcan%lhleaf_leaf(p,ic,isha)*(1._r8 - mlcan%fracsun_profile(p,ic)), &
+          mlcan%anet_leaf(p,ic,isun)*mlcan%fracsun_profile(p,ic) + mlcan%anet_leaf(p,ic,isha)*(1._r8 - mlcan%fracsun_profile(p,ic)), &
+          mlcan%apar_leaf(p,ic,isun)*mlcan%fracsun_profile(p,ic) + mlcan%apar_leaf(p,ic,isha)*(1._r8 - mlcan%fracsun_profile(p,ic)), &
+          mlcan%gs_leaf(p,ic,isun)*mlcan%fracsun_profile(p,ic) + mlcan%gs_leaf(p,ic,isha)*(1._r8 - mlcan%fracsun_profile(p,ic)), &
+          mlcan%ci_leaf(p,ic,isun)*mlcan%fracsun_profile(p,ic) + mlcan%ci_leaf(p,ic,isha)*(1._r8 - mlcan%fracsun_profile(p,ic)), &
+          mlcan%vpd_leaf(p,ic,isun)*mlcan%fracsun_profile(p,ic) + mlcan%vpd_leaf(p,ic,isha)*(1._r8 - mlcan%fracsun_profile(p,ic)), &
+          mlcan%lwp_hist_leaf(p,ic,isun)*mlcan%fracsun_profile(p,ic) + mlcan%lwp_hist_leaf(p,ic,isha)*(1._r8 - mlcan%fracsun_profile(p,ic)), &
+          mlcan%tleaf_hist_leaf(p,ic,isun)*mlcan%fracsun_profile(p,ic) + mlcan%tleaf_hist_leaf(p,ic,isha)*(1._r8 - mlcan%fracsun_profile(p,ic)), &
+          mlcan%vcmax25_leaf(p,ic,isun)*mlcan%fracsun_profile(p,ic) + mlcan%vcmax25_leaf(p,ic,isha)*(1._r8 - mlcan%fracsun_profile(p,ic)), &
           mlcan%wind_profile(p,ic), tair, qair, mlcan%eair_profile(p,ic), mlcan%cair_profile(p,ic)
        else
           ! Non-leaf layer
@@ -752,7 +777,7 @@ contains
           ! tair, eair, missing_value
 
           ! Non-leaf layer
-          write (nout3,'(f10.4,36f10.3)') curr_calday, mlcan%zs_profile(p,ic), mlcan%fracsun_profile(p,ic), &
+          write (nout3,'(f10.4,49f10.3)') curr_calday, mlcan%zs_profile(p,ic), mlcan%fracsun_profile(p,ic), &
           zero_value, zero_value, zero_value, &
           missing_value, missing_value, &
           missing_value, missing_value, &
@@ -767,6 +792,19 @@ contains
           missing_value, missing_value, &
           missing_value, missing_value, &
           missing_value, missing_value, &
+          missing_value, &
+          missing_value, &
+          missing_value, &
+          missing_value, &
+          missing_value, &
+          missing_value, &
+          missing_value, &
+          missing_value, &
+          missing_value, &
+          missing_value, &
+          missing_value, &
+          missing_value, &
+          missing_value, &
           mlcan%wind_profile(p,ic), tair, qair, mlcan%eair_profile(p,ic), mlcan%cair_profile(p,ic)
        end if
 
