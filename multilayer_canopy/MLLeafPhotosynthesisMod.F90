@@ -1015,6 +1015,9 @@ contains
     integer :: num_mlcan, filter_mlcan(1)
     real(r8) :: start,finish
     real(r8) :: lwp_old, factor
+    real(r8), parameter :: delta_wue       = 0.00001_r8
+    real(r8), parameter :: delta_manzoni11 = 0.00001_r8
+    real(r8), parameter :: delta_bonan14   = 0.001_r8
     !---------------------------------------------------------------------
 
     associate ( &
@@ -1035,7 +1038,9 @@ contains
 
     ! Specify "delta" as a small difference in gs (mol H2O/m2/s)
 
-    delta = 0.001_r8
+    delta = delta_wue
+    if (use_manzoni11 == 1) delta = delta_manzoni11
+    if (use_bonan14_wue == 1) delta = delta_bonan14
 
     ! Photosynthesis at lower gs (gs_val - delta)
 

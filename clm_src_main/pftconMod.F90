@@ -398,6 +398,7 @@ contains
 
     this%gsmin_SPA(:)= -999._r8
     this%gsmin_SPA(1:16)= 0.002_r8
+    this%gsmin_SPA(1:16)= 0.005_r8
 
     ! Ball-Berry stomatal conductance parameters
 
